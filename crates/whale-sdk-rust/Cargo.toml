@@ -1,0 +1,24 @@
+[package]
+name = "whale-sdk-rust"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+whale-protocol = { workspace = true }
+whale-core = { workspace = true }
+whale-daemon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { version = "0.1", features = ["io-util"] }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+uuid = { workspace = true }
+dashmap = "6"
+
+[dev-dependencies]
+whale-adapters = { workspace = true }
+async-stream = "0.3.6"
+

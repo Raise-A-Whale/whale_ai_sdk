@@ -1,0 +1,27 @@
+[package]
+name = "whale-daemon"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "whale-daemon"
+path = "src/main.rs"
+
+[dependencies]
+whale-protocol = { workspace = true }
+whale-core = { workspace = true }
+whale-adapters = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["codec"] }
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+dashmap = "6"
+async-trait = { workspace = true }
+chrono = { workspace = true }
+tokio-stream = { version = "0.1", features = ["io-util"] }
