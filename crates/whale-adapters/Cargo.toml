@@ -1,0 +1,19 @@
+[package]
+name = "whale-adapters"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+whale-protocol = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytes = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+eventsource-stream = "0.2"
+uuid = { workspace = true }
+async-stream = "0.3.6"
