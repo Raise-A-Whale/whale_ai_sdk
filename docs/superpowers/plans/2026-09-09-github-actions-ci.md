@@ -73,6 +73,8 @@ Each stable job checks out the repository, installs stable Rust with `actions-ru
 
 The cache step may be repeated per job so each job remains independently runnable and diagnosable.
 
+Set `rustflags: ""` on every `actions-rust-lang/setup-rust-toolchain@v1` step so inherited warning flags cannot turn non-gating style lints into job failures.
+
 - [x] **Step 3: Add `fmt` and `clippy` jobs**
 
 Use `runs-on: ubuntu-latest` and run:

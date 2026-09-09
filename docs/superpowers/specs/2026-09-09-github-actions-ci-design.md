@@ -19,6 +19,8 @@ workflow 只使用仓库已有的 Cargo workspace、测试、文档和 `scripts/
 
 PR workflow 不使用 secrets。所有网络依赖只用于拉取 Rust toolchain、Cargo 依赖和 GitHub Actions；测试必须使用仓库内的 deterministic fixtures。
 
+Rust toolchain setup explicitly clears inherited `RUSTFLAGS` so each job's command controls its own warning policy.
+
 ## CI jobs
 
 ### `fmt`
