@@ -2,9 +2,12 @@
 name = "whale-protocol"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Canonical protocol definitions, events, and JSON-RPC 2.0 schemas for Whale AI SDK"
+readme = "README.md"
 
 [dependencies]
 serde = { workspace = true }

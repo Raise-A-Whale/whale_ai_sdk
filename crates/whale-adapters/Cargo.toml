@@ -2,6 +2,12 @@
 name = "whale-adapters"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Canonical-to-provider protocol adapters for Whale model integrations"
+readme = "README.md"
 
 [dependencies]
 whale-protocol = { workspace = true }
@@ -17,3 +23,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 eventsource-stream = "0.2"
 uuid = { workspace = true }
 async-stream = "0.3.6"
+idna_adapter = { workspace = true }

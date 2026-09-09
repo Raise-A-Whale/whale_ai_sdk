@@ -37,11 +37,24 @@ impl UsageMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentStreamEvent {
-    /// A new agent turn has started.
-    TurnStarted {
+    /// Progress reported by an executing tool; never a model-generated event.
+    ToolProgress {
         turn_id: String,
-        thread_id: String,
+        call_id: String,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        progress: Option<f64>,
     },
+
+    /// Validated effective arguments immediately before the tool is invoked.
+    ToolExecutionStarted {
+        turn_id: String,
+        call_id: String,
+        original_arguments: serde_json::Value,
+        arguments: serde_json::Value,
+    },
+    /// A new agent turn has started.
+    TurnStarted { turn_id: String, thread_id: String },
 
     /// A new canonical item (message, reasoning, tool call) has started.
     ItemStarted {

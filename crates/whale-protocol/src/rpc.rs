@@ -198,6 +198,21 @@ pub const METHOD_SESSION_START_THREAD: &str = "session.start_thread";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StartThreadParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<crate::retention::SessionLimits>,
+    /// Selects a registered model implementation instead of HTTP configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_policy: Option<crate::contexts::ContextPolicyConfig>,
+    /// Explicit wire protocol, endpoint and credential reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_config: Option<crate::agents::ProviderConfig>,
+    /// Session generation defaults; individual turns may override them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<RunTurnOptions>,
     /// Optional parent session identifier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
@@ -237,6 +252,7 @@ pub struct RunTurnParams {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunTurnOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -246,6 +262,11 @@ pub struct RunTurnOptions {
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_budget: Option<u32>,
+    /// None inherits the Session default; false explicitly disables caching.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_caching: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -278,12 +299,20 @@ pub struct StreamEventsParams {
 
 /// Reverse RPC Method: "tool.execute_host"
 ///
-/// Sent by whale-daemon to the host client (Python/Java/Rust) requesting host-side execution
-/// of a tool (e.g., custom Python functions, host file I/O).
+/// Sent by whale-daemon to the Rust host requesting application-side execution
+/// of a tool, such as a product integration or host file operation.
 pub const METHOD_TOOL_EXECUTE_HOST: &str = "tool.execute_host";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolExecuteHostParams {
+    /// Exact host callback version. When present, clients must not fall back to name routing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<crate::contexts::ToolContextInfo>,
+    /// Session scope for resolving a host tool; omitted by legacy peers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
     pub call_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub namespace: Option<String>,
@@ -330,6 +359,9 @@ pub struct ApprovalResolveResult {
 /// Tool definition parameter for dynamic registration via RPC ("session.register_tools").
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegisterToolDefinition {
+    /// Opaque host binding identity, separate from the name shown to the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_id: Option<String>,
     pub name: String,
     pub description: String,
     pub parameters: Value,
@@ -358,4 +390,3 @@ pub struct RegisterToolsParams {
 pub struct RegisterToolsResult {
     pub registered_count: usize,
 }
-

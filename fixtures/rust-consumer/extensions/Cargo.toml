@@ -1,0 +1,17 @@
+[package]
+name = "whale-extension-consumer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+async-trait = "0.1"
+futures = "0.3"
+serde_json = "1.0"
+whale-core = { version = "0.1.0", path = "../../../crates/whale-core" }
+whale-daemon = { version = "0.1.0", path = "../../../crates/whale-daemon" }
+whale-protocol = { version = "0.1.0", path = "../../../crates/whale-protocol" }
+whale-sdk-rust = { version = "0.1.0", path = "../../../crates/whale-sdk-rust" }
+whale-store = { version = "0.1.0", path = "../../../crates/whale-store", features = ["sqlite"] }
+
+[workspace]

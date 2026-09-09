@@ -17,19 +17,14 @@ pub fn new_item_id() -> ItemId {
 /// The phase of an assistant message.
 ///
 /// Models often produce intermediate commentary or thinking before delivering the final answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessagePhase {
     /// Intermediate chain-of-thought commentary, planning, or progress notes.
     Commentary,
     /// The final user-facing response.
+    #[default]
     FinalAnswer,
-}
-
-impl Default for MessagePhase {
-    fn default() -> Self {
-        Self::FinalAnswer
-    }
 }
 
 /// Multi-modal content block supported in canonical messages.

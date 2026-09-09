@@ -1,9 +1,20 @@
 //! whale-protocol: Canonical protocol definitions, stream events, and JSON-RPC schemas
 //! for the Whale AI SDK.
 
+pub mod agents;
 pub mod canonical;
+pub mod contexts;
 pub mod events;
+pub mod initialization;
+pub mod interactions;
+pub mod models;
+pub mod recovery;
+pub mod retention;
 pub mod rpc;
+pub mod runs;
+pub mod session_management;
+pub mod session_views;
+pub mod sessions;
 
 pub use canonical::{
     new_item_id, CanonicalContent, CanonicalItem, CanonicalToolOutput, ItemId, MessagePhase,
@@ -29,10 +40,8 @@ mod tests {
 
     #[test]
     fn test_canonical_assistant_message_with_phases() {
-        let commentary = CanonicalItem::assistant_text(
-            "Analyzing code structure...",
-            MessagePhase::Commentary,
-        );
+        let commentary =
+            CanonicalItem::assistant_text("Analyzing code structure...", MessagePhase::Commentary);
         let final_ans =
             CanonicalItem::assistant_text("Here is the answer.", MessagePhase::FinalAnswer);
 
@@ -57,7 +66,9 @@ mod tests {
 
         let json_str = serde_json::to_string(&reasoning).expect("serialize");
         assert!(json_str.contains("\"type\":\"reasoning\""));
-        assert!(json_str.contains("\"thinking\":\"Step 1: Check inputs. Step 2: Formulate solution.\""));
+        assert!(
+            json_str.contains("\"thinking\":\"Step 1: Check inputs. Step 2: Formulate solution.\"")
+        );
         assert!(json_str.contains("\"signature\":\"sig_12345abc\""));
         assert!(json_str.contains("\"encrypted_content\":\"encrypted_blob\""));
 
@@ -201,6 +212,12 @@ mod tests {
             1,
             METHOD_SESSION_START_THREAD,
             Some(StartThreadParams {
+                limits: None,
+                provider_ref: None,
+                agent_name: None,
+                context_policy: None,
+                provider_config: None,
+                options: None,
                 session_id: Some("sess_123".to_string()),
                 provider: None,
                 model: "claude-3-7-sonnet".to_string(),
@@ -280,6 +297,9 @@ mod tests {
     fn test_reverse_rpc_and_approval_serde() {
         // Reverse RPC tool execution
         let tool_exec_params = ToolExecuteHostParams {
+            binding_id: None,
+            context: None,
+            thread_id: None,
             call_id: "call_host_1".to_string(),
             namespace: Some("python_host".to_string()),
             name: "fetch_local_db".to_string(),

@@ -1,8 +1,10 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
-use whale_core::{AgentEngine, ApprovalGate, ThreadSession, ToolExecutionCoordinator, ToolRegistry};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use whale_core::{
+    AgentEngine, ApprovalGate, ThreadSession, ToolExecutionCoordinator, ToolRegistry,
+};
 use whale_daemon::DaemonServer;
 use whale_protocol::canonical::{CanonicalItem, CanonicalToolOutput, MessagePhase};
 use whale_protocol::events::{AgentStreamEvent, UsageMetrics};
@@ -103,6 +105,7 @@ async fn test_sdk_in_process_session_and_reverse_rpc() {
                         turn_id: "turn_ipc".to_string(),
                         item: call,
                     };
+                    yield AgentStreamEvent::TurnCompleted { turn_id:"model".into(), thread_id:"model".into(), usage:UsageMetrics::default() };
                 } else {
                     // Step 1: Complete reply
                     yield AgentStreamEvent::ItemCompleted {
@@ -151,7 +154,9 @@ async fn test_sdk_in_process_session_and_reverse_rpc() {
 
     // Collect streaming events
     let mut received_events = Vec::new();
-    while let Ok(event) = tokio::time::timeout(std::time::Duration::from_millis(500), event_rx.recv()).await {
+    while let Ok(event) =
+        tokio::time::timeout(std::time::Duration::from_millis(500), event_rx.recv()).await
+    {
         match event {
             Some(ev) => received_events.push(ev),
             None => break,
@@ -171,7 +176,10 @@ async fn test_sdk_in_process_session_and_reverse_rpc() {
         }
         false
     });
-    assert!(has_echo_result, "Expected tool result from host tool execution");
+    assert!(
+        has_echo_result,
+        "Expected tool result from host tool execution"
+    );
 }
 
 #[tokio::test]
@@ -200,6 +208,7 @@ async fn test_sdk_approval_resolution_loop() {
                         turn_id: "turn_del".to_string(),
                         item: call,
                     };
+                    yield AgentStreamEvent::TurnCompleted { turn_id:"model".into(), thread_id:"model".into(), usage:UsageMetrics::default() };
                 } else {
                     yield AgentStreamEvent::ItemCompleted {
                         turn_id: "turn_del".to_string(),
@@ -247,16 +256,24 @@ async fn test_sdk_approval_resolution_loop() {
     let (run_res, mut event_rx) = thread.run_turn("delete target").await.unwrap();
 
     let mut has_approval_event = false;
-    while let Ok(Some(ev)) = tokio::time::timeout(std::time::Duration::from_millis(200), event_rx.recv()).await {
+    while let Ok(Some(ev)) =
+        tokio::time::timeout(std::time::Duration::from_millis(200), event_rx.recv()).await
+    {
         if let AgentStreamEvent::ApprovalRequested { .. } = ev {
             has_approval_event = true;
         }
     }
 
-    assert!(has_approval_event, "Must receive ApprovalRequested stream event");
+    assert!(
+        has_approval_event,
+        "Must receive ApprovalRequested stream event"
+    );
     assert!(run_res.items.len() >= 2);
     let has_approved_res = run_res.items.iter().any(|item| {
-        if let CanonicalItem::ToolResult { output, is_error, .. } = item {
+        if let CanonicalItem::ToolResult {
+            output, is_error, ..
+        } = item
+        {
             if !is_error {
                 if let CanonicalToolOutput::Text { text } = output {
                     return text.contains("Deleted /etc/hosts");
@@ -265,7 +282,10 @@ async fn test_sdk_approval_resolution_loop() {
         }
         false
     });
-    assert!(has_approved_res, "Expected sensitive tool execution to complete after approval");
+    assert!(
+        has_approved_res,
+        "Expected sensitive tool execution to complete after approval"
+    );
 }
 
 #[tokio::test]
@@ -276,10 +296,7 @@ async fn test_sdk_stdio_process_loop() {
 
     let registry = Arc::new(ToolRegistry::new());
     let approval_gate = Arc::new(ApprovalGate::new());
-    let coordinator = Arc::new(ToolExecutionCoordinator::new(
-        registry,
-        approval_gate,
-    ));
+    let coordinator = Arc::new(ToolExecutionCoordinator::new(registry, approval_gate));
 
     let engine = Arc::new(AgentEngine::new(coordinator).with_stream_provider(Arc::new(
         move |_session: &ThreadSession, _step: usize| {
@@ -307,7 +324,9 @@ async fn test_sdk_stdio_process_loop() {
             if let Ok((stream, _)) = listener.accept().await {
                 let (read_half, write_half) = stream.into_split();
                 let reader = tokio::io::BufReader::new(read_half);
-                let lines_stream = tokio_stream::wrappers::LinesStream::new(tokio::io::AsyncBufReadExt::lines(reader));
+                let lines_stream = tokio_stream::wrappers::LinesStream::new(
+                    tokio::io::AsyncBufReadExt::lines(reader),
+                );
                 let transport = whale_daemon::UnixStreamWriter::new(write_half);
                 let _ = server.run(lines_stream, transport).await;
             }
@@ -324,7 +343,10 @@ async fn test_sdk_stdio_process_loop() {
         .await
         .expect("create thread over UDS");
 
-    let (run_res, _rx) = thread.run_turn("hello UDS").await.expect("run turn over UDS");
+    let (run_res, _rx) = thread
+        .run_turn("hello UDS")
+        .await
+        .expect("run turn over UDS");
     assert!(run_res.items.iter().any(|i| {
         if let CanonicalItem::AssistantMessage { content, .. } = i {
             if let whale_protocol::canonical::CanonicalContent::Text { text } = &content[0] {
@@ -352,7 +374,10 @@ async fn test_sdk_spawn_daemon_stdio_subprocess() {
         .join("whale-daemon");
 
     if !daemon_bin.exists() {
-        eprintln!("whale-daemon binary not found at {:?}, skipping spawn test", daemon_bin);
+        eprintln!(
+            "whale-daemon binary not found at {:?}, skipping spawn test",
+            daemon_bin
+        );
         return;
     }
 
@@ -361,11 +386,12 @@ async fn test_sdk_spawn_daemon_stdio_subprocess() {
         .expect("spawn_daemon should succeed");
 
     let thread = client
-        .create_thread("claude-3-7-sonnet", Some("You are a helpful assistant".to_string()))
+        .create_thread(
+            "claude-3-7-sonnet",
+            Some("You are a helpful assistant".to_string()),
+        )
         .await
         .expect("create thread over subprocess stdio");
 
     assert!(!thread.id().is_empty());
 }
-
-

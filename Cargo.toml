@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/whale-protocol",
+    "crates/whale-store",
     "crates/whale-adapters",
     "crates/whale-core",
     "crates/whale-daemon",
@@ -11,8 +12,11 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 authors = ["Whale AI SDK Authors"]
 license = "Apache-2.0"
+repository = "https://github.com/Raise-A-Whale/whale_ai_sdk"
+readme = "README.md"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -26,10 +30,18 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 schemars = "0.8"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+getrandom = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+# idna_adapter 1.2.2 raises its MSRV to 1.86 and switches to ICU4X 2.2+.
+# Keep reqwest/url resolution inside Whale's declared Rust 1.85 baseline.
+idna_adapter = "=1.2.0"
 
 # Internal workspace crates
-whale-protocol = { path = "crates/whale-protocol" }
-whale-adapters = { path = "crates/whale-adapters" }
-whale-core = { path = "crates/whale-core" }
-whale-daemon = { path = "crates/whale-daemon" }
-whale-sdk-rust = { path = "crates/whale-sdk-rust" }
+whale-protocol = { version = "0.1.0", path = "crates/whale-protocol" }
+whale-store = { version = "0.1.0", path = "crates/whale-store" }
+whale-adapters = { version = "0.1.0", path = "crates/whale-adapters" }
+whale-core = { version = "0.1.0", path = "crates/whale-core" }
+whale-daemon = { version = "0.1.0", path = "crates/whale-daemon" }
+whale-sdk-rust = { version = "0.1.0", path = "crates/whale-sdk-rust" }

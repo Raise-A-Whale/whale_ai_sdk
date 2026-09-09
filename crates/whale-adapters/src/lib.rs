@@ -4,12 +4,16 @@
 //! and provider-specific wire schemas and SSE streams.
 
 pub mod anthropic;
+pub mod capabilities;
 pub mod openai;
+mod responses;
 pub mod traits;
 
 pub use anthropic::AnthropicAdapter;
 pub use openai::{OpenAIAdapter, OpenAIWireApi};
-pub use traits::{AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition};
+pub use traits::{
+    AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition,
+};
 
 #[cfg(test)]
 mod tests {
@@ -28,9 +32,19 @@ mod tests {
         let adapter = AnthropicAdapter::new("sk-ant-test-key");
         let history = vec![
             CanonicalItem::user_text("What is 2+2?"),
-            CanonicalItem::reasoning("User is asking for basic arithmetic.", Some("sig_123".into()), None),
+            CanonicalItem::reasoning(
+                "User is asking for basic arithmetic.",
+                Some("sig_123".into()),
+                None,
+            ),
             CanonicalItem::assistant_text("It is 4.", MessagePhase::FinalAnswer),
-            CanonicalItem::tool_call("call_calc_1", None, "calculator", Some(json!({"expr": "2+2"})), "{\"expr\":\"2+2\"}"),
+            CanonicalItem::tool_call(
+                "call_calc_1",
+                None,
+                "calculator",
+                Some(json!({"expr": "2+2"})),
+                "{\"expr\":\"2+2\"}",
+            ),
             CanonicalItem::tool_result("call_calc_1", CanonicalToolOutput::text("4"), false),
         ];
 
@@ -62,11 +76,19 @@ mod tests {
 
         assert_eq!(headers.get("x-api-key").unwrap(), "sk-ant-test-key");
         assert_eq!(headers.get("anthropic-version").unwrap(), "2023-06-01");
-        assert!(headers.get("anthropic-beta").unwrap().to_str().unwrap().contains("prompt-caching"));
+        assert!(headers
+            .get("anthropic-beta")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("prompt-caching"));
 
         // System prompt check with cache_control
         let sys = body.get("system").unwrap().as_array().unwrap();
-        assert_eq!(sys[0].get("text").unwrap(), "You are an expert mathematician.");
+        assert_eq!(
+            sys[0].get("text").unwrap(),
+            "You are an expert mathematician."
+        );
         assert_eq!(
             sys[0].get("cache_control").unwrap().get("type").unwrap(),
             "ephemeral"
@@ -82,7 +104,11 @@ mod tests {
         assert_eq!(body_tools.len(), 1);
         assert_eq!(body_tools[0].get("name").unwrap(), "calculator");
         assert_eq!(
-            body_tools[0].get("input_schema").unwrap().get("type").unwrap(),
+            body_tools[0]
+                .get("input_schema")
+                .unwrap()
+                .get("type")
+                .unwrap(),
             "object"
         );
 
@@ -98,7 +124,11 @@ mod tests {
         let last_user_content = messages[2].get("content").unwrap().as_array().unwrap();
         assert_eq!(last_user_content[0].get("type").unwrap(), "tool_result");
         assert_eq!(
-            last_user_content[0].get("cache_control").unwrap().get("type").unwrap(),
+            last_user_content[0]
+                .get("cache_control")
+                .unwrap()
+                .get("type")
+                .unwrap(),
             "ephemeral"
         );
     }
@@ -121,10 +151,8 @@ mod tests {
             "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
         ];
 
-        let chunks: Vec<Result<Bytes, reqwest::Error>> = sse_data
-            .into_iter()
-            .map(|s| Ok(Bytes::from(s)))
-            .collect();
+        let chunks: Vec<Result<Bytes, reqwest::Error>> =
+            sse_data.into_iter().map(|s| Ok(Bytes::from(s))).collect();
 
         let byte_stream = Box::pin(stream::iter(chunks));
         let mut event_stream = adapter.parse_stream(byte_stream);
@@ -143,9 +171,15 @@ mod tests {
                 ..
             } if item_type == "reasoning"
         ));
-        assert!(matches!(events[2], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "Let me "));
-        assert!(matches!(events[3], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "think."));
-        assert!(matches!(events[4], AgentStreamEvent::ReasoningSignature { ref signature, .. } if signature == "sig_xyz"));
+        assert!(
+            matches!(events[2], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "Let me ")
+        );
+        assert!(
+            matches!(events[3], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "think.")
+        );
+        assert!(
+            matches!(events[4], AgentStreamEvent::ReasoningSignature { ref signature, .. } if signature == "sig_xyz")
+        );
         assert!(matches!(
             events[5],
             AgentStreamEvent::ItemCompleted {
@@ -161,7 +195,9 @@ mod tests {
                 ..
             } if item_type == "assistant_message"
         ));
-        assert!(matches!(events[7], AgentStreamEvent::TextDelta { ref delta, .. } if delta == "Hello world"));
+        assert!(
+            matches!(events[7], AgentStreamEvent::TextDelta { ref delta, .. } if delta == "Hello world")
+        );
         assert!(matches!(
             events[8],
             AgentStreamEvent::ItemCompleted {
@@ -229,7 +265,10 @@ mod tests {
         assert_eq!(body.get("reasoning_effort").unwrap(), "high");
         assert_eq!(body.get("max_completion_tokens").unwrap(), 2048);
         assert_eq!(
-            body.get("stream_options").unwrap().get("include_usage").unwrap(),
+            body.get("stream_options")
+                .unwrap()
+                .get("include_usage")
+                .unwrap(),
             true
         );
 
@@ -263,7 +302,11 @@ mod tests {
             CanonicalItem::tool_result("call_diag_1", CanonicalToolOutput::text("All ok"), false),
         ];
 
-        let tools = vec![ToolDefinition::new("run_diag", "Run diagnostic check", json!({}))];
+        let tools = vec![ToolDefinition::new(
+            "run_diag",
+            "Run diagnostic check",
+            json!({}),
+        )];
         let options = SamplingOptions::new("gpt-4o");
 
         let (body, _headers) = adapter
@@ -295,10 +338,8 @@ mod tests {
             "data: [DONE]\n\n",
         ];
 
-        let chunks: Vec<Result<Bytes, reqwest::Error>> = sse_data
-            .into_iter()
-            .map(|s| Ok(Bytes::from(s)))
-            .collect();
+        let chunks: Vec<Result<Bytes, reqwest::Error>> =
+            sse_data.into_iter().map(|s| Ok(Bytes::from(s))).collect();
 
         let byte_stream = Box::pin(stream::iter(chunks));
         let mut event_stream = adapter.parse_stream(byte_stream);
@@ -317,8 +358,12 @@ mod tests {
                 ..
             } if item_type == "reasoning"
         ));
-        assert!(matches!(events[2], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "Solving "));
-        assert!(matches!(events[3], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "puzzle."));
+        assert!(
+            matches!(events[2], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "Solving ")
+        );
+        assert!(
+            matches!(events[3], AgentStreamEvent::ReasoningDelta { ref delta, .. } if delta == "puzzle.")
+        );
         assert!(matches!(
             events[4],
             AgentStreamEvent::ItemCompleted {
@@ -334,8 +379,12 @@ mod tests {
                 ..
             } if item_type == "assistant_message"
         ));
-        assert!(matches!(events[6], AgentStreamEvent::TextDelta { ref delta, .. } if delta == "Answer "));
-        assert!(matches!(events[7], AgentStreamEvent::TextDelta { ref delta, .. } if delta == "is 42."));
+        assert!(
+            matches!(events[6], AgentStreamEvent::TextDelta { ref delta, .. } if delta == "Answer ")
+        );
+        assert!(
+            matches!(events[7], AgentStreamEvent::TextDelta { ref delta, .. } if delta == "is 42.")
+        );
         assert!(matches!(
             events[8],
             AgentStreamEvent::ItemCompleted {
@@ -362,10 +411,8 @@ mod tests {
             "data: [DONE]\n\n",
         ];
 
-        let chunks: Vec<Result<Bytes, reqwest::Error>> = sse_data
-            .into_iter()
-            .map(|s| Ok(Bytes::from(s)))
-            .collect();
+        let chunks: Vec<Result<Bytes, reqwest::Error>> =
+            sse_data.into_iter().map(|s| Ok(Bytes::from(s))).collect();
 
         let byte_stream = Box::pin(stream::iter(chunks));
         let mut event_stream = adapter.parse_stream(byte_stream);

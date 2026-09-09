@@ -2,9 +2,16 @@
 name = "whale-core"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Agent turn engine, provider extensions, tools, approvals, and context for Whale"
+readme = "README.md"
 
 [dependencies]
 whale-protocol = { workspace = true }
+whale-store = { workspace = true }
 whale-adapters = { workspace = true }
 dashmap = "6"
 serde = { workspace = true }
@@ -20,3 +27,4 @@ chrono = { workspace = true }
 bytes = "1"
 async-stream = "0.3.6"
 
+jsonschema = { version = "0.55", default-features = false }

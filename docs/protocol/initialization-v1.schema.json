@@ -1,0 +1,93 @@
+{
+  "initialize_params": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "PeerInfo": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "type": "object"
+      }
+    },
+    "properties": {
+      "client": {
+        "$ref": "#/definitions/PeerInfo"
+      },
+      "protocol_versions": {
+        "items": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "type": "array"
+      },
+      "required_capabilities": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "client",
+      "protocol_versions",
+      "required_capabilities"
+    ],
+    "title": "InitializeParams",
+    "type": "object"
+  },
+  "initialize_result": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "definitions": {
+      "PeerInfo": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "type": "object"
+      }
+    },
+    "properties": {
+      "capabilities": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "protocol_version": {
+        "format": "uint32",
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "server": {
+        "$ref": "#/definitions/PeerInfo"
+      }
+    },
+    "required": [
+      "capabilities",
+      "protocol_version",
+      "server"
+    ],
+    "title": "InitializeResult",
+    "type": "object"
+  },
+  "note": "Structural schemas; negotiation and semantic set/name checks are specified by initialization-v1.json and InitializeResult::validate_for.",
+  "protocol_version": 1
+}

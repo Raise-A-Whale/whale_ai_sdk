@@ -1,7 +1,7 @@
 //! Transport abstractions for whale-daemon JSON-RPC communication over Stdio and Unix Domain Sockets (UDS).
 
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
@@ -12,49 +12,130 @@ pub trait OutgoingTransport: Send + Sync {
     async fn send_line(&self, line: &str) -> Result<(), std::io::Error>;
 }
 
-/// Thread-safe writer for standard output.
-pub struct StdioWriter {
-    stdout: Arc<Mutex<tokio::io::Stdout>>,
+/// A bounded, connection-owned frame writer. Cancelling a send only drops its
+/// acknowledgement; the actor still writes the complete JSON line. Explicit
+/// close may interrupt I/O because that connection can never be reused.
+#[derive(Clone)]
+pub struct FrameWriter {
+    inner: Arc<FrameWriterInner>,
 }
 
-impl StdioWriter {
-    pub fn new(stdout: Arc<Mutex<tokio::io::Stdout>>) -> Self {
-        Self { stdout }
+struct FrameWriterInner {
+    queue: tokio::sync::mpsc::Sender<(Vec<u8>, tokio::sync::oneshot::Sender<std::io::Result<()>>)>,
+    shutdown: tokio::sync::watch::Sender<bool>,
+    task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+impl FrameWriter {
+    pub fn new<W: tokio::io::AsyncWrite + Unpin + Send + 'static>(writer: W) -> Self {
+        Self::from_shared(Arc::new(Mutex::new(writer)))
     }
-}
 
-#[async_trait]
-impl OutgoingTransport for StdioWriter {
-    async fn send_line(&self, line: &str) -> Result<(), std::io::Error> {
-        let mut out = self.stdout.lock().await;
-        out.write_all(line.as_bytes()).await?;
-        out.write_all(b"\n").await?;
-        out.flush().await?;
-        Ok(())
-    }
-}
-
-/// Thread-safe writer for Unix Domain Sockets.
-pub struct UnixStreamWriter {
-    write_half: Arc<Mutex<tokio::net::unix::OwnedWriteHalf>>,
-}
-
-impl UnixStreamWriter {
-    pub fn new(write_half: tokio::net::unix::OwnedWriteHalf) -> Self {
+    fn from_shared<W: tokio::io::AsyncWrite + Unpin + Send + 'static>(
+        writer: Arc<Mutex<W>>,
+    ) -> Self {
+        let (queue, mut frames) = tokio::sync::mpsc::channel::<(
+            Vec<u8>,
+            tokio::sync::oneshot::Sender<std::io::Result<()>>,
+        )>(128);
+        let (shutdown, mut closing) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
+            loop {
+                let frame = tokio::select! {
+                    biased;
+                    _ = closing.changed() => break,
+                    frame = frames.recv() => frame,
+                };
+                let Some((frame, ack)) = frame else {
+                    break;
+                };
+                let result = tokio::select! {
+                    biased;
+                    _ = closing.changed() => break,
+                    result = async {
+                        let mut out = writer.lock().await;
+                        out.write_all(&frame).await?;
+                        out.flush().await
+                    } => result,
+                };
+                let failed = result.is_err();
+                let _ = ack.send(result);
+                if failed {
+                    break;
+                }
+            }
+        });
         Self {
-            write_half: Arc::new(Mutex::new(write_half)),
+            inner: Arc::new(FrameWriterInner {
+                queue,
+                shutdown,
+                task: Mutex::new(Some(task)),
+            }),
+        }
+    }
+
+    /// Permanently closes the writer, interrupts blocked I/O, and joins its actor.
+    pub async fn close(&self) {
+        self.inner.shutdown.send_replace(true);
+        let mut task = self.inner.task.lock().await;
+        if let Some(task) = task.take() {
+            let _ = task.await;
         }
     }
 }
 
 #[async_trait]
+impl OutgoingTransport for FrameWriter {
+    async fn send_line(&self, line: &str) -> std::io::Result<()> {
+        let closed = || std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Frame writer closed");
+        if *self.inner.shutdown.borrow() {
+            return Err(closed());
+        }
+        let mut frame = line.as_bytes().to_vec();
+        frame.push(b'\n');
+        let (ack, result) = tokio::sync::oneshot::channel();
+        self.inner
+            .queue
+            .send((frame, ack))
+            .await
+            .map_err(|_| closed())?;
+        result.await.map_err(|_| closed())?
+    }
+}
+
+/// Thread-safe writer for standard output.
+pub struct StdioWriter {
+    writer: FrameWriter,
+}
+impl StdioWriter {
+    pub fn new(stdout: Arc<Mutex<tokio::io::Stdout>>) -> Self {
+        Self {
+            writer: FrameWriter::from_shared(stdout),
+        }
+    }
+}
+#[async_trait]
+impl OutgoingTransport for StdioWriter {
+    async fn send_line(&self, line: &str) -> std::io::Result<()> {
+        self.writer.send_line(line).await
+    }
+}
+
+/// Thread-safe writer for Unix Domain Sockets.
+pub struct UnixStreamWriter {
+    writer: FrameWriter,
+}
+impl UnixStreamWriter {
+    pub fn new(write_half: tokio::net::unix::OwnedWriteHalf) -> Self {
+        Self {
+            writer: FrameWriter::new(write_half),
+        }
+    }
+}
+#[async_trait]
 impl OutgoingTransport for UnixStreamWriter {
-    async fn send_line(&self, line: &str) -> Result<(), std::io::Error> {
-        let mut out = self.write_half.lock().await;
-        out.write_all(line.as_bytes()).await?;
-        out.write_all(b"\n").await?;
-        out.flush().await?;
-        Ok(())
+    async fn send_line(&self, line: &str) -> std::io::Result<()> {
+        self.writer.send_line(line).await
     }
 }
 
@@ -62,11 +143,20 @@ impl OutgoingTransport for UnixStreamWriter {
 #[derive(Clone)]
 pub struct AnyTransportWriter {
     inner: Arc<dyn OutgoingTransport>,
+    connection_id: Arc<str>,
 }
 
 impl AnyTransportWriter {
+    /// Stable connection identity shared by clones.
+    pub fn connection_id(&self) -> &str {
+        &self.connection_id
+    }
+
     pub fn new(writer: Arc<dyn OutgoingTransport>) -> Self {
-        Self { inner: writer }
+        Self {
+            inner: writer,
+            connection_id: uuid::Uuid::new_v4().to_string().into(),
+        }
     }
 }
 

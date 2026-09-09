@@ -1,9 +1,9 @@
 //! Core traits and common types for LLM protocol adapters.
 
-use std::pin::Pin;
 use futures::Stream;
 use reqwest::header::HeaderMap;
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 use thiserror::Error;
 use whale_protocol::canonical::CanonicalItem;
 use whale_protocol::events::AgentStreamEvent;
@@ -104,6 +104,13 @@ impl SamplingOptions {
 
 /// Abstract protocol adapter trait implemented by provider-specific adapters (Anthropic, OpenAI, etc.).
 pub trait ProtocolAdapter: Send + Sync {
+    /// Legacy custom adapters default to text-only; override to declare their wire subset.
+    fn capabilities(&self) -> whale_protocol::models::ModelCapabilities {
+        let mut capabilities = whale_protocol::models::ModelCapabilities::text_only();
+        capabilities.scope = whale_protocol::models::ModelCapabilityScope::Protocol;
+        capabilities
+    }
+
     /// Identifier for the adapter provider.
     fn provider_name(&self) -> &'static str;
 

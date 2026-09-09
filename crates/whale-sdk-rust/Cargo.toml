@@ -2,6 +2,12 @@
 name = "whale-sdk-rust"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust application SDK for owning Whale Agent runtimes, Sessions, and Runs"
+readme = "README.md"
 
 [dependencies]
 whale-protocol = { workspace = true }
@@ -19,6 +25,8 @@ uuid = { workspace = true }
 dashmap = "6"
 
 [dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }
 whale-adapters = { workspace = true }
+whale-store = { workspace = true }
 async-stream = "0.3.6"
-

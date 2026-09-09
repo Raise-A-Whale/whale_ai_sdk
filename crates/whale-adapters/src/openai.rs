@@ -1,41 +1,49 @@
 //! OpenAI protocol adapter supporting both Chat Completions API and the newer Responses API.
 
-use std::pin::Pin;
 use async_stream::try_stream;
 use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::pin::Pin;
 use uuid::Uuid;
 use whale_protocol::canonical::{
     new_item_id, CanonicalContent, CanonicalItem, CanonicalToolOutput, MessagePhase,
 };
 use whale_protocol::events::{AgentStreamEvent, UsageMetrics};
 
-use crate::traits::{AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition};
+use crate::traits::{
+    AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition,
+};
 
 /// Wire format / endpoint protocol for OpenAI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpenAIWireApi {
     /// Standard /v1/chat/completions endpoint.
+    #[default]
     ChatCompletions,
     /// Next-generation /v1/responses endpoint.
     Responses,
 }
 
-impl Default for OpenAIWireApi {
-    fn default() -> Self {
-        Self::ChatCompletions
-    }
-}
-
 /// Adapter for OpenAI models supporting Chat Completions and Responses endpoints.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAIAdapter {
     api_key: String,
     base_url: String,
     wire_api: OpenAIWireApi,
+}
+
+impl std::fmt::Debug for OpenAIAdapter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("OpenAIAdapter")
+            .field("api_key", &"[REDACTED]")
+            .field("base_url", &self.base_url)
+            .field("wire_api", &self.wire_api)
+            .finish()
+    }
 }
 
 impl OpenAIAdapter {
@@ -78,6 +86,15 @@ impl OpenAIAdapter {
 }
 
 impl ProtocolAdapter for OpenAIAdapter {
+    fn capabilities(&self) -> whale_protocol::models::ModelCapabilities {
+        let api = if self.wire_api == OpenAIWireApi::Responses {
+            "responses"
+        } else {
+            "openai"
+        };
+        crate::capabilities::http_capabilities(api)
+    }
+
     fn provider_name(&self) -> &'static str {
         "openai"
     }
@@ -97,16 +114,19 @@ impl ProtocolAdapter for OpenAIAdapter {
         tools: &[ToolDefinition],
         options: &SamplingOptions,
     ) -> Result<(serde_json::Value, HeaderMap), AdapterError> {
+        let capabilities = self.capabilities();
+        crate::capabilities::validate_configuration(&options.model, tools, options, &capabilities)?;
+        crate::capabilities::validate_items(history, &capabilities)?;
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("Bearer {}", self.api_key))
-                .map_err(|e| AdapterError::ProtocolError(format!("Invalid API key header: {}", e)))?,
-        );
-        headers.insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json"),
-        );
+        if !self.api_key.is_empty() {
+            let mut authorization = HeaderValue::from_str(&format!("Bearer {}", self.api_key))
+                .map_err(|e| {
+                    AdapterError::ProtocolError(format!("Invalid API key header: {}", e))
+                })?;
+            authorization.set_sensitive(true);
+            headers.insert("Authorization", authorization);
+        }
+        headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
         match self.wire_api {
             OpenAIWireApi::ChatCompletions => {
@@ -121,10 +141,8 @@ impl ProtocolAdapter for OpenAIAdapter {
                 );
 
                 if let Some(temp) = options.temperature {
-                    // O1 / reasoning models may reject temperature or only support temperature=1
-                    if options.reasoning_effort.is_none() {
-                        body.insert("temperature".to_string(), json!(temp));
-                    }
+                    // Preserve explicit settings; remote models validate their supported combinations.
+                    body.insert("temperature".to_string(), json!(temp));
                 }
 
                 if let Some(max_tokens) = options.max_tokens {
@@ -155,7 +173,12 @@ impl ProtocolAdapter for OpenAIAdapter {
                     }));
                 }
 
+                // Only consecutive canonical calls belong to the same assistant batch.
+                let mut tool_group: Option<usize> = None;
                 for item in history {
+                    if !matches!(item, CanonicalItem::ToolCall { .. }) {
+                        tool_group = None;
+                    }
                     match item {
                         CanonicalItem::UserMessage { content, .. } => {
                             // If single text block, serialize as simple string, otherwise array of content objects
@@ -178,7 +201,11 @@ impl ProtocolAdapter for OpenAIAdapter {
                                             "text": text
                                         }));
                                     }
-                                    CanonicalContent::Image { mime_type, data, uri } => {
+                                    CanonicalContent::Image {
+                                        mime_type,
+                                        data,
+                                        uri,
+                                    } => {
                                         let url = if let Some(b64) = data {
                                             format!("data:{};base64,{}", mime_type, b64)
                                         } else if let Some(u) = uri {
@@ -236,24 +263,26 @@ impl ProtocolAdapter for OpenAIAdapter {
                                 "{}".to_string()
                             };
 
-                            messages.push(json!({
-                                "role": "assistant",
-                                "tool_calls": [
-                                    {
-                                        "id": call_id,
-                                        "type": "function",
-                                        "function": {
-                                            "name": name,
-                                            "arguments": args_str
-                                        }
-                                    }
-                                ]
-                            }));
+                            let call = json!({
+                                "id": call_id,
+                                "type": "function",
+                                "function": { "name": name, "arguments": args_str }
+                            });
+                            if let Some(index) = tool_group {
+                                messages[index]["tool_calls"]
+                                    .as_array_mut()
+                                    .expect("tool group always contains an array")
+                                    .push(call);
+                            } else {
+                                tool_group = Some(messages.len());
+                                messages.push(json!({
+                                    "role": "assistant",
+                                    "tool_calls": [call]
+                                }));
+                            }
                         }
                         CanonicalItem::ToolResult {
-                            call_id,
-                            output,
-                            ..
+                            call_id, output, ..
                         } => {
                             let content_str = match output {
                                 CanonicalToolOutput::Text { text } => text.clone(),
@@ -302,109 +331,10 @@ impl ProtocolAdapter for OpenAIAdapter {
 
                 Ok((serde_json::Value::Object(body), headers))
             }
-            OpenAIWireApi::Responses => {
-                // Next-generation /v1/responses format
-                let mut body = serde_json::Map::new();
-                body.insert("model".to_string(), json!(options.model));
-                body.insert("stream".to_string(), json!(true));
-
-                if let Some(sys) = system_prompt {
-                    body.insert("instructions".to_string(), json!(sys));
-                }
-
-                if let Some(ref effort) = options.reasoning_effort {
-                    body.insert(
-                        "reasoning".to_string(),
-                        json!({ "effort": effort }),
-                    );
-                }
-
-                if let Some(max_tokens) = options.max_tokens {
-                    body.insert("max_output_tokens".to_string(), json!(max_tokens));
-                }
-
-                // Input array for Responses API
-                let mut inputs: Vec<serde_json::Value> = Vec::new();
-                for item in history {
-                    match item {
-                        CanonicalItem::UserMessage { content, .. } => {
-                            for c in content {
-                                if let CanonicalContent::Text { text } = c {
-                                    inputs.push(json!({
-                                        "role": "user",
-                                        "content": text
-                                    }));
-                                }
-                            }
-                        }
-                        CanonicalItem::AssistantMessage { content, .. } => {
-                            for c in content {
-                                if let CanonicalContent::Text { text } = c {
-                                    inputs.push(json!({
-                                        "role": "assistant",
-                                        "content": text
-                                    }));
-                                }
-                            }
-                        }
-                        CanonicalItem::ToolCall {
-                            call_id,
-                            name,
-                            raw_arguments,
-                            ..
-                        } => {
-                            inputs.push(json!({
-                                "type": "function_call",
-                                "call_id": call_id,
-                                "name": name,
-                                "arguments": raw_arguments
-                            }));
-                        }
-                        CanonicalItem::ToolResult {
-                            call_id,
-                            output,
-                            ..
-                        } => {
-                            let text = match output {
-                                CanonicalToolOutput::Text { text } => text.clone(),
-                                CanonicalToolOutput::Structured { data } => data.to_string(),
-                                CanonicalToolOutput::Blocks { blocks } => {
-                                    blocks.iter().filter_map(|b| match b {
-                                        CanonicalContent::Text { text } => Some(text.as_str()),
-                                        _ => None,
-                                    }).collect::<Vec<_>>().join("")
-                                }
-                            };
-                            inputs.push(json!({
-                                "type": "function_call_output",
-                                "call_id": call_id,
-                                "output": text
-                            }));
-                        }
-                        CanonicalItem::Reasoning { .. } => {}
-                    }
-                }
-
-                body.insert("input".to_string(), json!(inputs));
-
-                // Tools for Responses API
-                if !tools.is_empty() {
-                    let response_tools: Vec<serde_json::Value> = tools
-                        .iter()
-                        .map(|t| {
-                            json!({
-                                "type": "function",
-                                "name": t.name,
-                                "description": t.description,
-                                "parameters": t.parameters
-                            })
-                        })
-                        .collect();
-                    body.insert("tools".to_string(), json!(response_tools));
-                }
-
-                Ok((serde_json::Value::Object(body), headers))
-            }
+            OpenAIWireApi::Responses => Ok((
+                crate::responses::serialize_request(system_prompt, history, tools, options)?,
+                headers,
+            )),
         }
     }
 
@@ -412,6 +342,9 @@ impl ProtocolAdapter for OpenAIAdapter {
         &self,
         byte_stream: Pin<Box<dyn Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
     ) -> BoxedEventStream {
+        if self.wire_api == OpenAIWireApi::Responses {
+            return crate::responses::parse_stream(byte_stream);
+        }
         let stream = try_stream! {
             let mut event_stream = byte_stream.eventsource();
             let turn_id = Uuid::new_v4().to_string();
@@ -432,6 +365,7 @@ impl ProtocolAdapter for OpenAIAdapter {
                 std::collections::HashMap::new();
 
             let mut current_usage = UsageMetrics::default();
+            let mut finished = false;
 
             while let Some(event_result) = event_stream.next().await {
                 let sse = event_result.map_err(|e| AdapterError::StreamParseError(e.to_string()))?;
@@ -486,6 +420,11 @@ impl ProtocolAdapter for OpenAIAdapter {
 
                 if choices.is_empty() {
                     continue;
+                }
+                if finished {
+                    Err(AdapterError::ProtocolError(
+                        "Chat Completions received a choice after finish_reason".into(),
+                    ))?;
                 }
 
                 let choice = &choices[0];
@@ -589,8 +528,19 @@ impl ProtocolAdapter for OpenAIAdapter {
                     }
                 }
 
-                // If finish_reason is present, finalize in-progress items
-                if finish_reason.is_some() {
+                // A socket EOF or [DONE] alone is not evidence of model completion.
+                // Continue reading after finish_reason to retain the final usage chunk.
+                if let Some(reason) = finish_reason {
+                    if !matches!(reason, "stop" | "tool_calls") {
+                        yield AgentStreamEvent::TurnFailed {
+                            turn_id: turn_id.clone(),
+                            thread_id: thread_id.clone(),
+                            error_code: "incomplete_completion".into(),
+                            error_message: format!("Chat completion stopped without a complete supported response: {reason}"),
+                        };
+                        return;
+                    }
+                    finished = true;
                     // Finalize reasoning item if open
                     if let Some(r_id) = current_reasoning_item_id.take() {
                         yield AgentStreamEvent::ItemCompleted {
@@ -638,7 +588,11 @@ impl ProtocolAdapter for OpenAIAdapter {
                 }
             }
 
-            // Yield turn completed
+            if !finished {
+                Err(AdapterError::StreamParseError(
+                    "Unexpected EOF before Chat Completions finish_reason".into(),
+                ))?;
+            }
             yield AgentStreamEvent::TurnCompleted {
                 turn_id: turn_id.clone(),
                 thread_id: thread_id.clone(),
