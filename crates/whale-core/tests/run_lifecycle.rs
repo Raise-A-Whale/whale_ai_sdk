@@ -129,7 +129,6 @@ async fn dropping_approval_wait_cleans_pending_request() {
         tokio::pin!(wait);
         tokio::select! { _= &mut wait => panic!("must wait"), _=rx.recv()=>{} }
         assert_eq!(gate.pending_count(), 1);
-        drop(wait);
     }
     assert_eq!(gate.pending_count(), 0);
 }

@@ -957,10 +957,7 @@ async fn typed_approval_maps_approve_reject_and_modified_arguments() {
         assert_eq!(calls.load(Ordering::SeqCst), expected_calls);
         assert_eq!(
             arguments.lock().unwrap().as_slice(),
-            expected_arguments
-                .as_ref()
-                .map(std::slice::from_ref)
-                .unwrap_or(&[])
+            expected_arguments.as_slice()
         );
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0], CanonicalItem::ToolResult { .. }));

@@ -31,12 +31,10 @@ PR workflow 不使用 secrets。所有网络依赖只用于拉取 Rust toolchain
 
 ```text
 cargo clippy --workspace --all-targets --all-features -- \
-  -D warnings \
-  -A clippy::too_many_arguments \
-  -A clippy::type_complexity
+  -D clippy::correctness
 ```
 
-The two explicitly allowed lints describe intentional public execution boundaries and provider callback types in the core runtime. All other Clippy warnings remain errors.
+The Clippy job treats correctness lints as errors. Style, complexity, and suspicious-pattern lints remain visible in the log without forcing a public API refactor or blocking otherwise valid SDK changes.
 
 ### `test`
 

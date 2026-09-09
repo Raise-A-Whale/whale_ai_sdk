@@ -1995,13 +1995,12 @@ impl DaemonServer {
                 None => futures::future::pending::<()>().await,
             }
         };
-        let outcome;
-        if !accepted {
-            outcome = Err((
+        let outcome = if !accepted {
+            Err((
                 RunStatus::Cancelled,
                 "CONNECTION_CLOSED",
                 "Run acceptance was not delivered".to_owned(),
-            ));
+            ))
         } else {
             let execution = self.engine.run_turn_with_context(
                 &mut session,
@@ -2013,7 +2012,7 @@ impl DaemonServer {
                 run.progress.clone(),
             );
             tokio::pin!(execution, deadline);
-            outcome = loop {
+            loop {
                 tokio::select! {
                     biased;
                     _ = async { if !*cancel.borrow() { let _ = cancel.changed().await; } } => break Err((RunStatus::Cancelled, "CANCELLED", "Run cancelled".to_owned())),
@@ -2036,8 +2035,8 @@ impl DaemonServer {
                     }),
                     Some(event) = rx.recv() => { self.publish_stream(&run, &transport, event).await; }
                 }
-            };
-        } // Dropping execution cancels model/tool futures and their pending approval/host guards.
+            }
+        }; // Dropping execution cancels model/tool futures and their pending approval/host guards.
         self.interactions.clear_run(
             &run.owner,
             &run.params.thread_id,

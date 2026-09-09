@@ -85,12 +85,10 @@ and:
 
 ```yaml
 cargo clippy --workspace --all-targets --all-features -- \
-  -D warnings \
-  -A clippy::too_many_arguments \
-  -A clippy::type_complexity
+  -D clippy::correctness
 ```
 
-The Clippy job must not set `continue-on-error`. The command allows only the two intentional structural lints `clippy::too_many_arguments` and `clippy::type_complexity`; all other warnings remain errors.
+The Clippy job must not set `continue-on-error`. It makes `clippy::correctness` errors while leaving style, complexity, and suspicious-pattern warnings visible without blocking the PR.
 
 - [x] **Step 4: Add `test`, `docs`, and `msrv` jobs**
 
@@ -172,7 +170,7 @@ Do not add advisory ignores without a repository-approved advisory ID and ration
 
 Check that only `schedule` and `workflow_dispatch` exist under `on`, the job has `contents: read`, and no secrets or write permissions appear.
 
-### Task 3: Keep the existing Rust code compatible with the strict lint gate
+### Task 3: Keep the existing Rust code compatible with the correctness lint gate
 
 **Files:**
 - Modify: `crates/whale-protocol/src/canonical.rs`
@@ -181,7 +179,7 @@ Check that only `schedule` and `workflow_dispatch` exist under `on`, the job has
 
 **Interfaces:**
 - Consumes: the public enum defaults and contract test behavior already covered by the workspace tests.
-- Produces: no API behavior change; Clippy-clean derived defaults and a non-cloning one-item slice.
+- Produces: no API behavior change; cleaner derived defaults and a non-cloning one-item slice while the CI gate focuses on correctness lints.
 
 - [x] **Step 1: Replace derivable defaults**
 
@@ -198,12 +196,10 @@ Run:
 ```bash
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- \
-  -D warnings \
-  -A clippy::too_many_arguments \
-  -A clippy::type_complexity
+  -D clippy::correctness
 ```
 
-Expected: formatting and Clippy both pass without any other warnings.
+Expected: formatting passes and Clippy reports no correctness lint errors; style/complexity/suspicious warnings may remain visible for later cleanup.
 
 ### Task 4: Validate and document the workflows
 

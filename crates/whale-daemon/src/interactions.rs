@@ -788,10 +788,10 @@ impl InteractionRegistry {
             let keys: Vec<_> = record
                 .entries
                 .iter()
-                .filter_map(|(key, state)| {
-                    (key.0 == turn_id && matches!(state, ResponseState::Pending(_)))
-                        .then(|| key.clone())
+                .filter(|(key, state)| {
+                    key.0 == turn_id && matches!(state, ResponseState::Pending(_))
                 })
+                .map(|(key, _)| key.clone())
                 .collect();
             let mut senders = Vec::new();
             for key in keys {

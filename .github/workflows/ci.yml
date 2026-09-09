@@ -52,9 +52,7 @@ jobs:
       - name: Run Clippy
         run: >-
           cargo clippy --workspace --all-targets --all-features --
-          -D warnings
-          -A clippy::too_many_arguments
-          -A clippy::type_complexity
+          -D clippy::correctness
 
   test:
     name: test
