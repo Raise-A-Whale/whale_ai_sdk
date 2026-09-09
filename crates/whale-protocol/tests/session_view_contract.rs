@@ -81,7 +81,8 @@ fn cursor_and_snapshot_have_stable_json() {
         id: "item-user".into(),
         content: vec![whale_protocol::CanonicalContent::text("hello")],
     };
-    let history = SessionHistoryWindow::from_history(&[history_item.clone()], 8).unwrap();
+    let history =
+        SessionHistoryWindow::from_history(std::slice::from_ref(&history_item), 8).unwrap();
     let snapshot = SessionSnapshot::new(summary, history, session_cursor);
     assert_eq!(
         serde_json::to_string(&snapshot).unwrap(),

@@ -18,18 +18,13 @@ use crate::traits::{
 };
 
 /// Wire format / endpoint protocol for OpenAI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OpenAIWireApi {
     /// Standard /v1/chat/completions endpoint.
+    #[default]
     ChatCompletions,
     /// Next-generation /v1/responses endpoint.
     Responses,
-}
-
-impl Default for OpenAIWireApi {
-    fn default() -> Self {
-        Self::ChatCompletions
-    }
 }
 
 /// Adapter for OpenAI models supporting Chat Completions and Responses endpoints.

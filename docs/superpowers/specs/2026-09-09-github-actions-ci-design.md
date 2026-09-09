@@ -30,8 +30,13 @@ PR workflow 不使用 secrets。所有网络依赖只用于拉取 Rust toolchain
 使用 stable Rust，执行 workspace、all targets、all features 的 Clippy，并将 warning 视为错误：
 
 ```text
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- \
+  -D warnings \
+  -A clippy::too_many_arguments \
+  -A clippy::type_complexity
 ```
+
+The two explicitly allowed lints describe intentional public execution boundaries and provider callback types in the core runtime. All other Clippy warnings remain errors.
 
 ### `test`
 
