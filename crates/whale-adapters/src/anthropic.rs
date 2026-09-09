@@ -3,29 +3,42 @@
 //! Handles serialization of canonical conversations to Anthropic Messages API schema,
 //! prompt caching markers, extended thinking / reasoning config, and parsing SSE streams.
 
-use std::pin::Pin;
 use async_stream::try_stream;
 use eventsource_stream::Eventsource;
 use futures::{Stream, StreamExt};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde_json::json;
+use std::pin::Pin;
 use uuid::Uuid;
 use whale_protocol::canonical::{
     new_item_id, CanonicalContent, CanonicalItem, CanonicalToolOutput, MessagePhase,
 };
 use whale_protocol::events::{AgentStreamEvent, UsageMetrics};
 
-use crate::traits::{AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition};
+use crate::traits::{
+    AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition,
+};
 
 /// Adapter for Anthropic Claude models using the Messages API.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AnthropicAdapter {
     api_key: String,
     base_url: String,
 }
 
+impl std::fmt::Debug for AnthropicAdapter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AnthropicAdapter")
+            .field("api_key", &"[REDACTED]")
+            .field("base_url", &self.base_url)
+            .finish()
+    }
+}
+
 impl AnthropicAdapter {
-    /// Creates a new AnthropicAdapter with the specified API key and default base URL ("https://api.anthropic.com/v1").
+    /// Creates a new AnthropicAdapter with the specified API key and default base URL
+    /// (<https://api.anthropic.com/v1>).
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
@@ -53,6 +66,11 @@ impl AnthropicAdapter {
 }
 
 impl ProtocolAdapter for AnthropicAdapter {
+    fn capabilities(&self) -> whale_protocol::models::ModelCapabilities {
+        let api = "anthropic";
+        crate::capabilities::http_capabilities(api)
+    }
+
     fn provider_name(&self) -> &'static str {
         "anthropic"
     }
@@ -68,20 +86,19 @@ impl ProtocolAdapter for AnthropicAdapter {
         tools: &[ToolDefinition],
         options: &SamplingOptions,
     ) -> Result<(serde_json::Value, HeaderMap), AdapterError> {
+        let capabilities = self.capabilities();
+        crate::capabilities::validate_configuration(&options.model, tools, options, &capabilities)?;
+        crate::capabilities::validate_items(history, &capabilities)?;
         let mut headers = HeaderMap::new();
-        headers.insert(
-            "x-api-key",
-            HeaderValue::from_str(&self.api_key)
-                .map_err(|e| AdapterError::ProtocolError(format!("Invalid API key header: {}", e)))?,
-        );
-        headers.insert(
-            "anthropic-version",
-            HeaderValue::from_static("2023-06-01"),
-        );
-        headers.insert(
-            "content-type",
-            HeaderValue::from_static("application/json"),
-        );
+        if !self.api_key.is_empty() {
+            let mut api_key = HeaderValue::from_str(&self.api_key).map_err(|e| {
+                AdapterError::ProtocolError(format!("Invalid API key header: {}", e))
+            })?;
+            api_key.set_sensitive(true);
+            headers.insert("x-api-key", api_key);
+        }
+        headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
 
         // Required beta header for prompt caching and output extension
         headers.insert(
@@ -99,9 +116,12 @@ impl ProtocolAdapter for AnthropicAdapter {
 
         if let Some(temp) = options.temperature {
             // Anthropic extended thinking requires temperature = 1.0 or omitted
-            if options.thinking_budget.is_none() {
-                body.insert("temperature".to_string(), json!(temp));
+            if options.thinking_budget.is_some() && temp != 1.0 {
+                return Err(AdapterError::ProtocolError(
+                    "Anthropic thinking requires temperature=1 or no explicit temperature".into(),
+                ));
             }
+            body.insert("temperature".to_string(), json!(temp));
         }
 
         // Handle Extended Thinking
@@ -174,7 +194,11 @@ impl ProtocolAdapter for AnthropicAdapter {
                                     "text": text
                                 }));
                             }
-                            CanonicalContent::Image { mime_type, data, uri } => {
+                            CanonicalContent::Image {
+                                mime_type,
+                                data,
+                                uri,
+                            } => {
                                 if let Some(base64_data) = data {
                                     blocks.push(json!({
                                         "type": "image",
@@ -204,7 +228,11 @@ impl ProtocolAdapter for AnthropicAdapter {
                         push_or_merge_message(&mut messages, "user", blocks);
                     }
                 }
-                CanonicalItem::Reasoning { thinking, signature, .. } => {
+                CanonicalItem::Reasoning {
+                    thinking,
+                    signature,
+                    ..
+                } => {
                     let mut block = json!({
                         "type": "thinking",
                         "thinking": thinking
@@ -237,7 +265,9 @@ impl ProtocolAdapter for AnthropicAdapter {
                 } => {
                     let input_val = if let Some(args) = arguments {
                         args.clone()
-                    } else if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw_arguments) {
+                    } else if let Ok(parsed) =
+                        serde_json::from_str::<serde_json::Value>(raw_arguments)
+                    {
                         parsed
                     } else {
                         json!({})
@@ -272,7 +302,11 @@ impl ProtocolAdapter for AnthropicAdapter {
                                             "text": text
                                         }));
                                     }
-                                    CanonicalContent::Image { mime_type, data, .. } => {
+                                    CanonicalContent::Image {
+                                        mime_type,
+                                        data,
+                                        uri,
+                                    } => {
                                         if let Some(b64) = data {
                                             b_list.push(json!({
                                                 "type": "image",
@@ -282,6 +316,8 @@ impl ProtocolAdapter for AnthropicAdapter {
                                                     "data": b64
                                                 }
                                             }));
+                                        } else if let Some(uri) = uri {
+                                            b_list.push(json!({"type":"image","source":{"type":"url","url":uri}}));
                                         }
                                     }
                                     _ => {}
@@ -309,13 +345,12 @@ impl ProtocolAdapter for AnthropicAdapter {
         // If prompt caching is enabled and there are messages, attach cache_control to the last block of the last message
         if options.prompt_caching {
             if let Some(last_msg) = messages.last_mut() {
-                if let Some(content_array) = last_msg.get_mut("content").and_then(|c| c.as_array_mut()) {
+                if let Some(content_array) =
+                    last_msg.get_mut("content").and_then(|c| c.as_array_mut())
+                {
                     if let Some(last_block) = content_array.last_mut() {
                         if let Some(obj) = last_block.as_object_mut() {
-                            obj.insert(
-                                "cache_control".to_string(),
-                                json!({ "type": "ephemeral" }),
-                            );
+                            obj.insert("cache_control".to_string(), json!({ "type": "ephemeral" }));
                         }
                     }
                 }
@@ -339,6 +374,7 @@ impl ProtocolAdapter for AnthropicAdapter {
             // Track state during the stream
             let mut current_item_id = new_item_id();
             let mut current_block_type = String::new();
+            let mut block_open = false;
             let mut current_text_buf = String::new();
             let mut current_thinking_buf = String::new();
             let mut current_signature_buf = String::new();
@@ -381,6 +417,10 @@ impl ProtocolAdapter for AnthropicAdapter {
                         }
                     }
                     "content_block_start" => {
+                        if block_open {
+                            Err(AdapterError::ProtocolError("Anthropic started a block before closing the previous block".into()))?;
+                        }
+                        block_open = true;
                         current_item_id = new_item_id();
                         current_text_buf.clear();
                         current_thinking_buf.clear();
@@ -479,6 +519,7 @@ impl ProtocolAdapter for AnthropicAdapter {
                         }
                     }
                     "content_block_stop" => {
+                        block_open = false;
                         match current_block_type.as_str() {
                             "text" => {
                                 let item = CanonicalItem::AssistantMessage {
@@ -528,6 +569,17 @@ impl ProtocolAdapter for AnthropicAdapter {
                         }
                     }
                     "message_delta" => {
+                        if let Some(reason) = parsed["delta"]["stop_reason"].as_str() {
+                            if !matches!(reason, "end_turn" | "tool_use" | "stop_sequence" | "refusal") {
+                                yield AgentStreamEvent::TurnFailed {
+                                    turn_id: turn_id.clone(),
+                                    thread_id: thread_id.clone(),
+                                    error_code: "incomplete_completion".into(),
+                                    error_message: format!("Anthropic generation stopped without a complete supported response: {reason}"),
+                                };
+                                return;
+                            }
+                        }
                         if let Some(usage) = parsed.get("usage") {
                             if let Some(ot) = usage.get("output_tokens").and_then(|v| v.as_u64()) {
                                 current_usage.output_tokens = ot;
@@ -535,11 +587,15 @@ impl ProtocolAdapter for AnthropicAdapter {
                         }
                     }
                     "message_stop" => {
+                        if block_open {
+                            Err(AdapterError::ProtocolError("Anthropic message_stop arrived before content_block_stop".into()))?;
+                        }
                         yield AgentStreamEvent::TurnCompleted {
                             turn_id: turn_id.clone(),
                             thread_id: thread_id.clone(),
                             usage: current_usage.clone(),
                         };
+                        return;
                     }
                     "error" => {
                         let err_obj = parsed.get("error");
@@ -551,10 +607,14 @@ impl ProtocolAdapter for AnthropicAdapter {
                             error_code: err_type.to_string(),
                             error_message: err_msg.to_string(),
                         };
+                        return;
                     }
                     _ => {}
                 }
             }
+            Err(AdapterError::StreamParseError(
+                "Unexpected EOF before Anthropic message_stop".into(),
+            ))?;
         };
 
         Box::pin(stream)

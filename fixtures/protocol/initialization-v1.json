@@ -1,0 +1,504 @@
+{
+  "protocol_version": 1,
+  "request": {
+    "client": {
+      "name": "whale-contract",
+      "version": "0.1.0"
+    },
+    "protocol_versions": [
+      1
+    ],
+    "required_capabilities": [
+      "runs.v1",
+      "scoped_tools.v1",
+      "tool_context.v1",
+      "context_policy.v1",
+      "session_close.v1",
+      "provider_config.v1",
+      "model_providers.v1",
+      "sampling_options.v1"
+    ]
+  },
+  "response_cases": [
+    {
+      "name": "current",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "additional_capability",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1",
+          "future.v2"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "additional_fields",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "future": {
+          "enabled": true
+        },
+        "protocol_version": 1,
+        "server": {
+          "future": 1,
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "custom_server_name",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "application-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "wrong_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 2,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "boolean_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": true,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "floating_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1.0,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "string_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": "1",
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "zero_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 0,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "negative_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": -1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "oversized_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 4294967296,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "null_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": null,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "missing_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "missing_capability",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "duplicate_capability",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1",
+          "runs.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "blank_capability",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1",
+          " "
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "nonstring_capability",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1",
+          true
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "missing_capabilities",
+      "result": {
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "blank_server_name",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "padded_server_name",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": " daemon",
+          "version": "0.1.0"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "blank_server_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": ""
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "nonstring_server_version",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1,
+        "server": {
+          "name": "whale-daemon",
+          "version": 1
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "missing_server",
+      "result": {
+        "capabilities": [
+          "runs.v1",
+          "scoped_tools.v1",
+          "tool_context.v1",
+          "context_policy.v1",
+          "session_close.v1",
+          "provider_config.v1",
+          "model_providers.v1",
+          "sampling_options.v1"
+        ],
+        "protocol_version": 1
+      },
+      "valid": false
+    },
+    {
+      "name": "nonobject_result",
+      "result": [],
+      "valid": false
+    }
+  ]
+}

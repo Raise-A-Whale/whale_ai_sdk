@@ -1,5 +1,6 @@
 //! whale-daemon: IPC daemon server and Reverse RPC host bridge for Whale AI SDK.
 
+mod context_bridge;
 pub mod server;
 pub mod transport;
 

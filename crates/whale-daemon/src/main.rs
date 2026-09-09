@@ -1,14 +1,14 @@
 //! whale-daemon CLI binary entrypoint.
 
+use clap::Parser;
 use std::path::PathBuf;
 use std::sync::Arc;
-use clap::Parser;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::Mutex;
+use tokio_stream::wrappers::LinesStream;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use tokio_stream::wrappers::LinesStream;
 
 use whale_daemon::{DaemonServer, StdioWriter, UnixStreamWriter};
 
@@ -23,6 +23,14 @@ struct Cli {
     /// Log level filter (trace, debug, info, warn, error)
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// SQLite session store; startup recovery finishes before accepting connections.
+    #[arg(long, visible_alias = "store")]
+    session_store: Option<PathBuf>,
+
+    /// JSON retention policy for completed runs and detached stored sessions.
+    #[arg(long)]
+    retention_config: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -30,8 +38,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // When running stdio, log only to stderr so stdout is purely for JSON-RPC framing!
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&cli.log_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&cli.log_level));
 
     tracing_subscriber::registry()
         .with(filter)
@@ -40,7 +48,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting whale-daemon (listen={})", cli.listen);
 
-    let server = Arc::new(DaemonServer::default_server());
+    let mut server = DaemonServer::default_server();
+    if let Some(path) = cli.session_store {
+        let backend =
+            tokio::task::spawn_blocking(move || whale_store::SQLiteStore::open(path)).await??;
+        let runtime = whale_store::StoreRuntime::open(Arc::new(backend)).await?;
+        server = server.with_store_runtime(Arc::new(runtime));
+    }
+    if let Some(path) = cli.retention_config {
+        let policy = serde_json::from_slice(&tokio::fs::read(path).await?)?;
+        server = server
+            .with_retention_policy(policy)
+            .map_err(std::io::Error::other)?;
+    }
+    let server = Arc::new(server);
 
     if cli.listen == "stdio" {
         let stdin = tokio::io::stdin();

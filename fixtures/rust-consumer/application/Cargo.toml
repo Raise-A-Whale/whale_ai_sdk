@@ -1,0 +1,10 @@
+[package]
+name = "whale-application-consumer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+whale-sdk-rust = { version = "0.1.0", path = "../../../crates/whale-sdk-rust" }
+
+[workspace]

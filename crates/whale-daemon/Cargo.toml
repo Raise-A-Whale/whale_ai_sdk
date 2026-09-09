@@ -2,6 +2,12 @@
 name = "whale-daemon"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Whale JSON-RPC daemon and connection-scoped Session runtime"
+readme = "README.md"
 
 [[bin]]
 name = "whale-daemon"
@@ -10,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 whale-protocol = { workspace = true }
 whale-core = { workspace = true }
+whale-store = { workspace = true, features = ["sqlite"] }
 whale-adapters = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { version = "0.7", features = ["codec"] }
@@ -24,4 +31,12 @@ uuid = { workspace = true }
 dashmap = "6"
 async-trait = { workspace = true }
 chrono = { workspace = true }
+base64 = { workspace = true }
+getrandom = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
 tokio-stream = { version = "0.1", features = ["io-util"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+async-stream = "0.3.6"

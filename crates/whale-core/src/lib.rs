@@ -1,30 +1,42 @@
 //! whale-core: Agent core state machine, concurrency coordinator, session management, and turn engine.
 
 pub mod approval;
+pub mod context;
 pub mod coordinator;
 pub mod engine;
 pub mod error;
+pub mod execution;
+pub mod http_provider;
+pub mod interaction;
+pub mod model;
+pub mod provider;
 pub mod session;
 
 pub use approval::{ApprovalDecision, ApprovalGate};
+pub use context::{ContextPolicy, FullHistoryContext, RecentTurnsContext};
 pub use coordinator::{ToolExecutionCoordinator, ToolHandler, ToolRegistry};
 pub use engine::{AgentEngine, RunTurnResult};
 pub use error::CoreError;
+pub use execution::{CancellationToken, ToolContext};
+pub use interaction::{
+    validate_interaction_request, validate_interaction_response, InteractionBeginGuard,
+    InteractionBridge, InteractionTicket,
+};
 pub use session::ThreadSession;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
-    use async_trait::async_trait;
-    use serde_json::json;
     use tokio::sync::mpsc;
-    use whale_adapters::{AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition};
-    use whale_protocol::canonical::{
-        CanonicalItem, CanonicalToolOutput, MessagePhase,
+    use whale_adapters::{
+        AdapterError, BoxedEventStream, ProtocolAdapter, SamplingOptions, ToolDefinition,
     };
+    use whale_protocol::canonical::{CanonicalItem, CanonicalToolOutput, MessagePhase};
     use whale_protocol::events::{AgentStreamEvent, UsageMetrics};
 
     // --- Mock Tools for testing ---
@@ -54,7 +66,10 @@ mod tests {
         fn require_approval(&self) -> bool {
             false
         }
-        async fn execute(&self, arguments: serde_json::Value) -> Result<CanonicalToolOutput, String> {
+        async fn execute(
+            &self,
+            arguments: serde_json::Value,
+        ) -> Result<CanonicalToolOutput, String> {
             let a = arguments.get("a").and_then(|v| v.as_i64()).unwrap_or(0);
             let b = arguments.get("b").and_then(|v| v.as_i64()).unwrap_or(0);
             Ok(CanonicalToolOutput::text(format!("{}", a + b)))
@@ -121,9 +136,18 @@ mod tests {
         fn require_approval(&self) -> bool {
             true
         }
-        async fn execute(&self, arguments: serde_json::Value) -> Result<CanonicalToolOutput, String> {
-            let amount = arguments.get("amount").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            Ok(CanonicalToolOutput::text(format!("Transferred ${}", amount)))
+        async fn execute(
+            &self,
+            arguments: serde_json::Value,
+        ) -> Result<CanonicalToolOutput, String> {
+            let amount = arguments
+                .get("amount")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            Ok(CanonicalToolOutput::text(format!(
+                "Transferred ${}",
+                amount
+            )))
         }
     }
 
@@ -132,6 +156,11 @@ mod tests {
     struct MockStepAdapter;
 
     impl ProtocolAdapter for MockStepAdapter {
+        fn capabilities(&self) -> whale_protocol::models::ModelCapabilities {
+            let mut caps = whale_protocol::models::ModelCapabilities::text_only();
+            caps.tool_calls = true;
+            caps
+        }
         fn provider_name(&self) -> &'static str {
             "mock"
         }
@@ -166,7 +195,7 @@ mod tests {
     async fn test_tool_registry_and_parallel_barrier() {
         let registry = Arc::new(ToolRegistry::new());
         let calc = Arc::new(MockCalculator);
-        registry.register(calc);
+        registry.register(calc).expect("valid tool schema");
 
         let active_count = Arc::new(AtomicUsize::new(0));
         let max_concurrent = Arc::new(AtomicUsize::new(0));
@@ -174,7 +203,7 @@ mod tests {
             active_count: Arc::clone(&active_count),
             max_concurrent: Arc::clone(&max_concurrent),
         });
-        registry.register(exclusive);
+        registry.register(exclusive).expect("valid tool schema");
 
         let approval_gate = Arc::new(ApprovalGate::new());
         let coordinator = ToolExecutionCoordinator::new(registry, approval_gate);
@@ -202,7 +231,9 @@ mod tests {
             CanonicalItem::tool_call("e1", None, "exclusive_writer", Some(json!({})), ""),
             CanonicalItem::tool_call("e2", None, "exclusive_writer", Some(json!({})), ""),
         ];
-        let results_ex = coordinator.execute_calls("turn_2", exclusive_calls, None).await;
+        let results_ex = coordinator
+            .execute_calls("turn_2", exclusive_calls, None)
+            .await;
         assert_eq!(results_ex.len(), 2);
         // Ensure max_concurrent never exceeded 1 because of exclusive write barrier!
         assert_eq!(max_concurrent.load(Ordering::SeqCst), 1);
@@ -211,7 +242,9 @@ mod tests {
     #[tokio::test]
     async fn test_approval_gate_accept_and_deny() {
         let registry = Arc::new(ToolRegistry::new());
-        registry.register(Arc::new(HitlSensitiveTool));
+        registry
+            .register(Arc::new(HitlSensitiveTool))
+            .expect("valid tool schema");
 
         let approval_gate = Arc::new(ApprovalGate::new());
         let coordinator = Arc::new(ToolExecutionCoordinator::new(
@@ -256,7 +289,10 @@ mod tests {
 
         let results = exec_handle.await.unwrap();
         assert_eq!(results.len(), 1);
-        if let CanonicalItem::ToolResult { output, is_error, .. } = &results[0] {
+        if let CanonicalItem::ToolResult {
+            output, is_error, ..
+        } = &results[0]
+        {
             assert!(!is_error);
             assert_eq!(output, &CanonicalToolOutput::text("Transferred $500"));
         } else {
@@ -298,7 +334,10 @@ mod tests {
         assert!(resolved);
 
         let results2 = exec_handle2.await.unwrap();
-        if let CanonicalItem::ToolResult { output, is_error, .. } = &results2[0] {
+        if let CanonicalItem::ToolResult {
+            output, is_error, ..
+        } = &results2[0]
+        {
             assert!(is_error);
             if let CanonicalToolOutput::Text { text } = output {
                 assert!(text.contains("Amount exceeds limits"));
@@ -311,7 +350,9 @@ mod tests {
     #[tokio::test]
     async fn test_approval_modify_arguments() {
         let registry = Arc::new(ToolRegistry::new());
-        registry.register(Arc::new(HitlSensitiveTool));
+        registry
+            .register(Arc::new(HitlSensitiveTool))
+            .expect("valid tool schema");
 
         let approval_gate = Arc::new(ApprovalGate::new());
         let coordinator = Arc::new(ToolExecutionCoordinator::new(
@@ -355,7 +396,10 @@ mod tests {
         assert!(resolved);
 
         let results = exec_handle.await.unwrap();
-        if let CanonicalItem::ToolResult { output, is_error, .. } = &results[0] {
+        if let CanonicalItem::ToolResult {
+            output, is_error, ..
+        } = &results[0]
+        {
             assert!(!is_error);
             assert_eq!(output, &CanonicalToolOutput::text("Transferred $50"));
         } else {
@@ -366,7 +410,9 @@ mod tests {
     #[tokio::test]
     async fn test_agent_engine_multi_step_turn_loop() {
         let registry = Arc::new(ToolRegistry::new());
-        registry.register(Arc::new(MockCalculator));
+        registry
+            .register(Arc::new(MockCalculator))
+            .expect("valid tool schema");
 
         let approval_gate = Arc::new(ApprovalGate::new());
         let coordinator = Arc::new(ToolExecutionCoordinator::new(
@@ -395,6 +441,7 @@ mod tests {
                             turn_id: "turn_test".to_string(),
                             item: tool_call,
                         };
+                        yield AgentStreamEvent::TurnCompleted {turn_id:"fixture".into(),thread_id:"fixture".into(),usage:UsageMetrics::default()};
                     } else {
                         // Step 1: Model sees tool result "40" and replies
                         let assistant_item = CanonicalItem::assistant_text(
@@ -465,8 +512,12 @@ mod tests {
         }
 
         // 3. Verify emitted events sequence
-        assert!(events.iter().any(|e| matches!(e, AgentStreamEvent::TurnStarted { .. })));
-        assert!(events.iter().any(|e| matches!(e, AgentStreamEvent::TurnCompleted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AgentStreamEvent::TurnStarted { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AgentStreamEvent::TurnCompleted { .. })));
 
         // 4. Verify metrics
         assert_eq!(run_result.total_usage.input_tokens, 120);
