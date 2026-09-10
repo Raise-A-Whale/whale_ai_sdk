@@ -74,3 +74,52 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             $PRERELEASE_FLAG
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: [test, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Publish crates in topological dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: |
+          # 检查是否配置了 crates.io Token
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CRATES_IO_TOKEN secret is not set. Please configure it in repository Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          # 按照依赖拓扑顺序依次发布：
+          # whale-protocol -> whale-store -> whale-adapters -> whale-core -> whale-daemon -> whale-sdk-rust
+          CRATES=(
+            "crates/whale-protocol"
+            "crates/whale-store"
+            "crates/whale-adapters"
+            "crates/whale-core"
+            "crates/whale-daemon"
+            "crates/whale-sdk-rust"
+          )
+
+          for crate in "${CRATES[@]}"; do
+            echo "================================================="
+            echo "Publishing ${crate} to crates.io..."
+            echo "================================================="
+
+            cargo publish -p $(basename "$crate")
+
+            # crates.io 索引同步存在短暂延迟，等待 30 秒以确保下游依赖解析成功
+            if [ "$crate" != "crates/whale-sdk-rust" ]; then
+              echo "Waiting 30 seconds for crates.io index propagation..."
+              sleep 30
+            fi
+          done
+
+          echo "All crates published successfully!"
