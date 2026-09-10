@@ -141,7 +141,25 @@ Whale 适合作为以下产品的底层 Runtime：
 | OpenAI Responses | https://api.openai.com/v1/responses | OPENAI_API_KEY |
 | Anthropic Messages | https://api.anthropic.com/v1/messages | ANTHROPIC_API_KEY |
 
-ProviderConfig 还支持自定义 base URL 和显式无认证的本地服务。如需非 HTTP Provider 或自定义凭证，请在 daemon 启动时注册 ModelProvider。支持的协议范围与扩展契约请阅读 [Agent API](docs/AGENT_API.md) 和 [模型扩展 API](docs/MODEL_PROVIDER_API.md)。
+ProviderConfig 支持自定义 base URL，因此任何实现了上述协议的第三方端点都可以用同样方式接入：把 `base_url` 指向对应 Provider 的 URL，并指定其凭证环境变量名：
+
+~~~rust
+// Kimi（Moonshot），走 OpenAI Chat Completions 协议
+definition.provider_config = Some(ProviderConfig {
+    api: ProviderApi::OpenaiChatCompletions,
+    base_url: Some("https://api.moonshot.cn/v1".into()),
+    auth: Some(ProviderAuth::Env { variable: "KIMI_API_KEY".into() }),
+});
+
+// DeepSeek，走 OpenAI Chat Completions 协议
+definition.provider_config = Some(ProviderConfig {
+    api: ProviderApi::OpenaiChatCompletions,
+    base_url: Some("https://api.deepseek.com/v1".into()),
+    auth: Some(ProviderAuth::Env { variable: "DEEPSEEK_API_KEY".into() }),
+});
+~~~
+
+提供 Anthropic 兼容端点的服务（例如 Kimi 的 Anthropic 协议服务）则改用 `ProviderApi::AnthropicMessages` 并填对应的 base URL。`ProviderAuth::None` 用于显式声明无认证的本地服务。如需非 HTTP Provider 或自定义凭证，请在 daemon 启动时注册 ModelProvider。支持的协议范围与扩展契约请阅读 [Agent API](docs/AGENT_API.md) 和 [模型扩展 API](docs/MODEL_PROVIDER_API.md)。
 
 ## Runtime 模式与平台支持
 

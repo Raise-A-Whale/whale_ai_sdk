@@ -1,6 +1,6 @@
 # Whale AI SDK
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English｜[简体中文](README.zh-CN.md)
 
 [![Rust CI](https://github.com/Raise-A-Whale/whale_ai_sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/Raise-A-Whale/whale_ai_sdk/actions/workflows/ci.yml)
 [![Rust Security Audit](https://github.com/Raise-A-Whale/whale_ai_sdk/actions/workflows/security.yml/badge.svg)](https://github.com/Raise-A-Whale/whale_ai_sdk/actions/workflows/security.yml)
@@ -183,7 +183,29 @@ manager. Those are product choices owned by the host application.
 | OpenAI Responses | https://api.openai.com/v1/responses | OPENAI_API_KEY |
 | Anthropic Messages | https://api.anthropic.com/v1/messages | ANTHROPIC_API_KEY |
 
-ProviderConfig also supports a custom base URL and explicit no-auth local
+ProviderConfig also supports a custom base URL, so any third-party endpoint
+that speaks one of these protocols works the same way—point `base_url` at the
+provider's URL and name its credential environment variable:
+
+~~~rust
+// Kimi (Moonshot) over the OpenAI Chat Completions protocol
+definition.provider_config = Some(ProviderConfig {
+    api: ProviderApi::OpenaiChatCompletions,
+    base_url: Some("https://api.moonshot.cn/v1".into()),
+    auth: Some(ProviderAuth::Env { variable: "KIMI_API_KEY".into() }),
+});
+
+// DeepSeek over the OpenAI Chat Completions protocol
+definition.provider_config = Some(ProviderConfig {
+    api: ProviderApi::OpenaiChatCompletions,
+    base_url: Some("https://api.deepseek.com/v1".into()),
+    auth: Some(ProviderAuth::Env { variable: "DEEPSEEK_API_KEY".into() }),
+});
+~~~
+
+A provider that exposes an Anthropic-compatible endpoint (such as Kimi's
+Anthropic-protocol service) selects `ProviderApi::AnthropicMessages` with that
+service's base URL instead. `ProviderAuth::None` covers explicit no-auth local
 services. For non-HTTP providers or custom credentials, register a ModelProvider
 at daemon startup. Read the [Agent API](docs/AGENT_API.md) and
 [model provider API](docs/MODEL_PROVIDER_API.md) for the supported protocol

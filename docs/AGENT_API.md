@@ -78,7 +78,22 @@ logical run, not necessarily an already executing external host operation.
 
 `base_url` includes any version prefix. It must be an absolute HTTP(S) URL without
 embedded credentials, query or fragment. API-compatible private services can use
-the same protocol with their own endpoint and model name.
+the same protocol with their own endpoint and model name. Third-party endpoints
+that implement one of these protocols—such as Kimi (`https://api.moonshot.cn/v1`)
+or DeepSeek (`https://api.deepseek.com/v1`) over OpenAI Chat Completions—are
+configured the same way:
+
+```json
+"provider_config": {
+  "api": "openai_chat_completions",
+  "base_url": "https://api.deepseek.com/v1",
+  "auth": {"type": "env", "variable": "DEEPSEEK_API_KEY"}
+}
+```
+
+An Anthropic-compatible third-party endpoint (for example Kimi's
+Anthropic-protocol service) selects `anthropic_messages` with that service's
+base URL instead.
 
 - `auth: {type: env, variable: ...}` resolves a credential in the daemon process.
 - Omitting `auth` on explicit configuration uses the conventional variable and
