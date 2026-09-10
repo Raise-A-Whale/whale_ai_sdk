@@ -5,6 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-whale-sdk-rust = { version = "0.1.0", path = "../../../crates/whale-sdk-rust" }
+whale-sdk-rust = { version = "0.1.0-beta", path = "../../../crates/whale-sdk-rust" }
 
 [workspace]

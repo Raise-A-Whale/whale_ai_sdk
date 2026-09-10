@@ -36,7 +36,7 @@ record_check() {
     shift
     local log="$WORK_DIR/${name}.log"
     if "$@" >"$log" 2>&1; then
-        if rg -n '^warning:' "$log" >/dev/null; then
+        if grep -q '^warning:' "$log"; then
             printf 'RED  %s (Cargo warnings)\n' "$name"
             sed -n '1,160p' "$log"
             FAILURES=$((FAILURES + 1))
@@ -130,6 +130,8 @@ unpacked = pathlib.Path(sys.argv[3]).resolve()
 version = sys.argv[4]
 mode = sys.argv[5]
 text = manifest.read_text()
+# Update internal whale-* dependency versions to current target version
+text = re.sub(r'(whale-[A-Za-z0-9-]+\s*=\s*\{[^}]*version\s*=\s*)"[^"]+"', rf'\g<1>"{version}"', text)
 if mode == "workspace":
     replacement_root = root / "crates"
     text = text.replace('../../../crates/', replacement_root.as_posix() + '/')
@@ -198,7 +200,7 @@ package_and_unpack() {
         cat "$log"
         return 1
     fi
-    if rg -n '^warning:' "$log"; then
+    if grep -n '^warning:' "$log"; then
         cat "$log"
         return 1
     fi
