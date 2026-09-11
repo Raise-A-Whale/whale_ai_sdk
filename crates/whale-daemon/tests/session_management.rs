@@ -23,6 +23,39 @@ impl OutgoingTransport for Capture {
     }
 }
 
+struct ClosingBarrier {
+    output: mpsc::UnboundedSender<Value>,
+    entered: Semaphore,
+    release: Semaphore,
+}
+
+impl ClosingBarrier {
+    fn new(output: mpsc::UnboundedSender<Value>) -> Self {
+        Self {
+            output,
+            entered: Semaphore::new(0),
+            release: Semaphore::new(0),
+        }
+    }
+}
+
+#[async_trait]
+impl OutgoingTransport for ClosingBarrier {
+    async fn send_line(&self, line: &str) -> std::io::Result<()> {
+        let value: Value = serde_json::from_str(line).expect("daemon emits JSON");
+        if value["method"] == "session.event.v2"
+            && value["params"]["type"] == "lifecycle_changed"
+            && value["params"]["lifecycle"] == "closing"
+        {
+            self.entered.add_permits(1);
+            self.release.acquire().await.unwrap().forget();
+        }
+        self.output
+            .send(value)
+            .map_err(|_| std::io::Error::other("capture closed"))
+    }
+}
+
 fn fixture() -> (
     DaemonServer,
     AnyTransportWriter,
@@ -51,8 +84,11 @@ struct ControlledStore {
     metadata_calls: AtomicUsize,
     create_calls: AtomicUsize,
     fail_detach: AtomicBool,
+    block_detach: AtomicBool,
     entered: Semaphore,
     release: Semaphore,
+    detach_entered: Semaphore,
+    detach_release: Semaphore,
 }
 
 impl ControlledStore {
@@ -63,8 +99,11 @@ impl ControlledStore {
             metadata_calls: AtomicUsize::new(0),
             create_calls: AtomicUsize::new(0),
             fail_detach: AtomicBool::new(false),
+            block_detach: AtomicBool::new(false),
             entered: Semaphore::new(0),
             release: Semaphore::new(0),
+            detach_entered: Semaphore::new(0),
+            detach_release: Semaphore::new(0),
         }
     }
 
@@ -78,6 +117,10 @@ impl ControlledStore {
 
     fn fail_next_detach(&self) {
         self.fail_detach.store(true, Ordering::SeqCst);
+    }
+
+    fn block_next_detach(&self) {
+        self.block_detach.store(true, Ordering::SeqCst);
     }
 }
 
@@ -120,8 +163,14 @@ impl SessionStore for ControlledStore {
                 _ => {}
             }
         }
-        if replacement.owner.is_none() && self.fail_detach.swap(false, Ordering::SeqCst) {
-            return Err(StoreError::Io("injected detach failure".into()));
+        if replacement.owner.is_none() {
+            if self.block_detach.swap(false, Ordering::SeqCst) {
+                self.detach_entered.add_permits(1);
+                self.detach_release.acquire().await.unwrap().forget();
+            }
+            if self.fail_detach.swap(false, Ordering::SeqCst) {
+                return Err(StoreError::Io("injected detach failure".into()));
+            }
         }
         self.memory
             .compare_exchange(id, revision, replacement)
@@ -133,12 +182,10 @@ impl SessionStore for ControlledStore {
     }
 }
 
-async fn persistent_fixture() -> (
-    DaemonServer,
-    AnyTransportWriter,
-    mpsc::UnboundedReceiver<Value>,
-    Arc<ControlledStore>,
-) {
+async fn persistent_server(
+    writer: &AnyTransportWriter,
+    rx: &mut mpsc::UnboundedReceiver<Value>,
+) -> (DaemonServer, Arc<ControlledStore>) {
     let store = Arc::new(ControlledStore::new());
     let runtime = Arc::new(StoreRuntime::open(store.clone()).await.unwrap());
     let gate = Arc::new(ApprovalGate::new());
@@ -147,10 +194,20 @@ async fn persistent_fixture() -> (
         gate.clone(),
     )))
     .with_stream_provider(Arc::new(|_, _| Ok(Box::pin(futures::stream::pending()))));
+    let server = DaemonServer::new(Arc::new(engine), gate).with_store_runtime(runtime);
+    common::initialize(&server, writer, Some(rx)).await;
+    (server, store)
+}
+
+async fn persistent_fixture() -> (
+    DaemonServer,
+    AnyTransportWriter,
+    mpsc::UnboundedReceiver<Value>,
+    Arc<ControlledStore>,
+) {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let writer = AnyTransportWriter::new(Arc::new(Capture(tx)));
-    let server = DaemonServer::new(Arc::new(engine), gate).with_store_runtime(runtime);
-    common::initialize(&server, &writer, Some(&mut rx)).await;
+    let (server, store) = persistent_server(&writer, &mut rx).await;
     (server, writer, rx, store)
 }
 
@@ -832,9 +889,12 @@ async fn durable_metadata_failure_advances_no_cursor_or_event() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn failed_persistent_detach_never_publishes_closed_and_fails_owner_connection() {
-    let (server, writer, mut rx, backend) = persistent_fixture().await;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let barrier = Arc::new(ClosingBarrier::new(tx));
+    let writer = AnyTransportWriter::new(barrier.clone());
+    let (server, backend) = persistent_server(&writer, &mut rx).await;
     let key = recovery_key();
-    let _created = direct(
+    let created = direct(
         &server,
         &writer,
         1,
@@ -842,6 +902,7 @@ async fn failed_persistent_detach_never_publishes_closed_and_fails_owner_connect
         json!({"key":key,"session":persistent_config(PERSISTENT_THREAD,"initial")}),
     )
     .await;
+    assert!(created.get("error").is_none(), "{created}");
     let initial = direct(
         &server,
         &writer,
@@ -863,15 +924,52 @@ async fn failed_persistent_detach_never_publishes_closed_and_fails_owner_connect
     )
     .await;
     assert!(subscribed.get("error").is_none(), "{subscribed}");
+
+    backend.block_next_detach();
     backend.fail_next_detach();
-    let failed = direct(
-        &server,
-        &writer,
-        4,
-        "session.close",
-        json!({"thread_id":PERSISTENT_THREAD}),
+    let closing_server = server.clone();
+    let closing_writer = writer.clone();
+    let close = tokio::spawn(async move {
+        direct(
+            &closing_server,
+            &closing_writer,
+            4,
+            "session.close",
+            json!({"thread_id":PERSISTENT_THREAD}),
+        )
+        .await
+    });
+
+    let closing_send =
+        tokio::time::timeout(std::time::Duration::from_secs(2), barrier.entered.acquire())
+            .await
+            .expect("closing notification reaches the transport barrier")
+            .unwrap();
+    closing_send.forget();
+    assert!(
+        backend.detach_entered.try_acquire().is_err(),
+        "detach must not begin before the closing transport send completes"
+    );
+
+    barrier.release.add_permits(1);
+    let closing = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        .await
+        .expect("closing notification deadline")
+        .expect("closing notification");
+    assert_eq!(closing["method"], "session.event.v2");
+    assert_eq!(closing["params"]["type"], "lifecycle_changed");
+    assert_eq!(closing["params"]["lifecycle"], "closing");
+
+    let detach = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        backend.detach_entered.acquire(),
     )
-    .await;
+    .await
+    .expect("detach begins after closing was sent")
+    .unwrap();
+    detach.forget();
+    backend.detach_release.add_permits(1);
+    let failed = close.await.expect("close task joins");
     assert_eq!(
         failed["error"]["code"],
         whale_protocol::recovery::STORE_FAILED
@@ -895,14 +993,10 @@ async fn failed_persistent_detach_never_publishes_closed_and_fails_owner_connect
     })
     .await
     .expect("unknown detach outcome fails the owner connection");
-    let mut lifecycles = Vec::new();
-    while let Ok(value) = rx.try_recv() {
-        if value["method"] == "session.event.v2" && value["params"]["type"] == "lifecycle_changed" {
-            lifecycles.push(value["params"]["lifecycle"].clone());
-        }
-    }
-    assert!(lifecycles.contains(&json!("closing")));
-    assert!(!lifecycles.contains(&json!("closed")));
+    assert!(
+        rx.try_recv().is_err(),
+        "failed detach must never publish a closed notification"
+    );
     let stored = backend
         .load(key["recovery_id"].as_str().unwrap())
         .await
