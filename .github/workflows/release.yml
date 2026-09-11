@@ -109,11 +109,26 @@ jobs:
           )
 
           for crate in "${CRATES[@]}"; do
+            crate_name=$(basename "$crate")
             echo "================================================="
-            echo "Publishing ${crate} to crates.io..."
+            echo "Checking & Publishing ${crate_name} to crates.io..."
             echo "================================================="
 
-            cargo publish -p $(basename "$crate")
+            # 抓取发布日志，并做幂等判断
+            publish_log=$(mktemp)
+            if cargo publish -p "$crate_name" 2>&1 | tee "$publish_log"; then
+              echo "Successfully published ${crate_name}!"
+            else
+              # 如果错误信息提示该版本已经存在，视为成功并继续
+              if grep -qi "already exists" "$publish_log"; then
+                echo "Notice: ${crate_name} version already exists on crates.io, skipping."
+              else
+                echo "::error::Failed to publish ${crate_name}"
+                rm -f "$publish_log"
+                exit 1
+              fi
+            fi
+            rm -f "$publish_log"
 
             # crates.io 索引同步存在短暂延迟，等待 30 秒以确保下游依赖解析成功
             if [ "$crate" != "crates/whale-sdk-rust" ]; then
