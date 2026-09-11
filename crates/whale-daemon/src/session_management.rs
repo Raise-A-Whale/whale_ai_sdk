@@ -362,11 +362,12 @@ impl ManagementNotifier {
         }
     }
 
-    async fn publish_terminal(&self, envelope: SessionEventEnvelopeV2) {
+    async fn publish_confirmed(&self, envelope: SessionEventEnvelopeV2) {
+        let confirmed_cursor = envelope.cursor.clone();
         let ready = self.ordered(envelope);
         for envelope in ready {
             let terminal = is_closed(&envelope);
-            let (completed, wait) = if terminal {
+            let (completed, wait) = if envelope.cursor == confirmed_cursor {
                 let (tx, rx) = oneshot::channel();
                 (Some(tx), Some(rx))
             } else {
@@ -388,6 +389,10 @@ impl ManagementNotifier {
                 let _ = wait.await;
             }
         }
+    }
+
+    async fn publish_terminal(&self, envelope: SessionEventEnvelopeV2) {
+        self.publish_confirmed(envelope).await;
     }
 
     fn close(&self) {
@@ -1197,17 +1202,18 @@ impl SessionManagementRegistry {
                 }
             }
         };
-        let mut projection = record.projection.lock().unwrap();
-        if projection.snapshot.cursor != prepared.source {
-            return Err(SessionManagementFailure::InvalidProjection(
-                "Lifecycle projection changed while its publication lane was held".into(),
-            ));
-        }
-        *projection = prepared.next;
-        let envelope = prepared.envelope;
-        drop(projection);
+        let envelope = {
+            let mut projection = record.projection.lock().unwrap();
+            if projection.snapshot.cursor != prepared.source {
+                return Err(SessionManagementFailure::InvalidProjection(
+                    "Lifecycle projection changed while its publication lane was held".into(),
+                ));
+            }
+            *projection = prepared.next;
+            prepared.envelope
+        };
         drop(_lane);
-        record.notifier.publish(envelope);
+        record.notifier.publish_confirmed(envelope).await;
         Ok(())
     }
 
