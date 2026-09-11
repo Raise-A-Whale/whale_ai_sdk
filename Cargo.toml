@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0-beta"
+version = "0.1.0-beta.1"
 edition = "2021"
 rust-version = "1.85"
 authors = ["Whale AI SDK Authors"]
@@ -39,9 +39,9 @@ sha2 = "0.10"
 idna_adapter = "=1.2.0"
 
 # Internal workspace crates
-whale-protocol = { version = "0.1.0-beta", path = "crates/whale-protocol" }
-whale-store = { version = "0.1.0-beta", path = "crates/whale-store" }
-whale-adapters = { version = "0.1.0-beta", path = "crates/whale-adapters" }
-whale-core = { version = "0.1.0-beta", path = "crates/whale-core" }
-whale-daemon = { version = "0.1.0-beta", path = "crates/whale-daemon" }
-whale-sdk-rust = { version = "0.1.0-beta", path = "crates/whale-sdk-rust" }
+whale-protocol = { version = "0.1.0-beta.1", path = "crates/whale-protocol" }
+whale-store = { version = "0.1.0-beta.1", path = "crates/whale-store" }
+whale-adapters = { version = "0.1.0-beta.1", path = "crates/whale-adapters" }
+whale-core = { version = "0.1.0-beta.1", path = "crates/whale-core" }
+whale-daemon = { version = "0.1.0-beta.1", path = "crates/whale-daemon" }
+whale-sdk-rust = { version = "0.1.0-beta.1", path = "crates/whale-sdk-rust" }
