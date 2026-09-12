@@ -74,15 +74,17 @@ daemon without rewriting its Agent integration.
 
 ## Quick start
 
-Whale is not yet published to crates.io. Until release, depend on the Rust SDK
-directly from this repository. This reference tracks the default branch; pin a
-tag or revision for reproducible production builds when one is available:
+Whale is published on crates.io. Add the Rust SDK from the registry and pin the
+version according to your application's compatibility policy:
 
 ~~~toml
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-whale-sdk-rust = { git = "https://github.com/Raise-A-Whale/whale_ai_sdk", package = "whale-sdk-rust" }
+whale-sdk-rust = "0.1.0-beta.1"
 ~~~
+
+To test an unreleased commit, use a Git dependency and pin a tag or revision for
+reproducible builds.
 
 Set a provider credential, then create an embedded runtime, an Agent, a Session,
 and a Run:
@@ -271,9 +273,10 @@ local infrastructure.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before submitting a change, please run the
-verification commands above and keep changes focused. For an overview of public
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+the development workflow and verification checks. For an overview of public
 compatibility expectations, see the [API stability policy](docs/API_STABILITY.md).
+Please report suspected vulnerabilities according to [SECURITY.md](SECURITY.md).
 
 ## License
 

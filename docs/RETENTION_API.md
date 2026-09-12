@@ -1,6 +1,6 @@
 # Retention and session admission limits
 
-C5 adds optional automatic payload retention and per-session admission budgets in the working tree. Both are disabled by default. Ordinary sessions remain in memory; a Store is still required for [persistent sessions](RECOVERY_API.md). These changes are not a released compatibility guarantee. The [C5 plan](superpowers/plans/2026-09-08-retention.md) records implementation and validation status.
+Automatic payload retention and per-session admission budgets are optional and disabled by default. Ordinary sessions remain in memory; a Store is still required for [persistent sessions](RECOVERY_API.md). Public compatibility expectations are defined by the [API stability policy](API_STABILITY.md).
 
 ## Configure the runtime
 
@@ -116,4 +116,4 @@ Direct Core embeddings use `ThreadSession::set_limits` and Core's admission chec
 
 This bounds eligible payloads, not every allocation: accepted-ID and recovery tombstones, application-held handles, active sessions and protected unknown records can remain. Session quotas and explicit close complement retention. Automatic history compaction, tokenizer-specific budgets, plugin unload, native async client surfaces, full protocol generation, observability and matched SDK/daemon distribution remain separate work.
 
-See the [daemon report](superpowers/plans/c5-daemon-report.md), [Store report](superpowers/plans/c5-store-report.md), [production verifier report](superpowers/plans/c5-retention-verifier-report.md) and [C5 validation ledger](superpowers/plans/2026-09-08-retention.md) for the observed unit, concurrency and three-language production checks. These results cover the documented policy boundaries; they do not imply every scheduler, backend or distribution environment has been tested.
+The workspace unit, concurrency and package verification suites cover these documented policy boundaries; they do not imply every scheduler, backend or distribution environment has been tested.

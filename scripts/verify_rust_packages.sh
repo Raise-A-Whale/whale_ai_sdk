@@ -274,11 +274,17 @@ for path in root.rglob("*"):
     except OSError as error:
         print(f"archive member cannot be inspected: {relative}: {error}")
         raise SystemExit(1)
-    absolute_paths = (
-        workspace.as_posix().encode(), b"/Users/pengzihao/",
-    )
+    absolute_paths = (workspace.as_posix().encode(),)
     if any(value in contents for value in absolute_paths):
         print(f"archive contains an absolute local workspace path: {relative}")
+        raise SystemExit(1)
+    local_home_patterns = (
+        rb"/Users/[^/\s]+/",
+        rb"/home/[^/\s]+/",
+        rb"(?i:[A-Za-z]:[\\/]+Users[\\/]+[^\\/\s]+[\\/]+)",
+    )
+    if any(re.search(pattern, contents) for pattern in local_home_patterns):
+        print(f"archive contains an absolute local user path: {relative}")
         raise SystemExit(1)
     secret_patterns = (
         rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",

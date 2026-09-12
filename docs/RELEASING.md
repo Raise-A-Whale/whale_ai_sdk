@@ -1,9 +1,10 @@
 # Releasing
 
-This SDK is consumed **internally via git dependencies**; we do not publish to
-crates.io. Version management is handled by `.github/workflows/release.yml`:
-pushing a `v*` tag validates the workspace, runs the test suite, and creates a
-GitHub Release with generated notes. No secrets or extra setup are required.
+This SDK is released from Git tags. Version management is handled by `.github/workflows/release.yml`:
+pushing a `v*` tag validates the workspace, runs the test suite, creates a
+GitHub Release with generated notes, and publishes the six workspace crates to
+crates.io. The release workflow requires the `CRATES_IO_TOKEN` repository
+secret.
 
 ## Cutting a release
 
@@ -27,44 +28,34 @@ GitHub Release with generated notes. No secrets or extra setup are required.
 Tags containing a hyphen (for example `v0.2.0-beta.1`) are marked as
 pre-releases on GitHub.
 
-## Consuming the SDK (internal projects)
+## Consuming the SDK
 
-Pin a released tag in the consumer's `Cargo.toml`:
+Released versions are published to crates.io by the tag workflow. Consumers
+can select a released version from the registry:
 
 ```toml
 [dependencies]
-whale-sdk-rust = { git = "https://github.com/Raise-A-Whale/whale_ai_sdk", tag = "v0.2.0" }
+whale-sdk-rust = "0.1.0-beta.1"
+```
+
+To consume an unreleased commit or test a repository tag directly, use a Git
+dependency instead:
+
+```toml
+[dependencies]
+whale-sdk-rust = { git = "https://github.com/Raise-A-Whale/whale_ai_sdk", tag = "v0.1.0-beta.1" }
 ```
 
 Cargo locates the `whale-sdk-rust` crate inside the workspace automatically.
 Use `branch = "main"` to track development, or `rev = "<sha>"` to pin an exact
-commit. Regardless of the ref used, `Cargo.lock` records the resolved commit;
-to upgrade, bump the tag and run `cargo update -p whale-sdk-rust`.
+commit. Regardless of the ref used, `Cargo.lock` records the resolved commit.
 
-### Private repository access
+## Publishing to crates.io
 
-If this repository is private, consumer machines need read access:
-
-- **SSH (recommended for local development):** use the SSH URL and let the
-  system git handle keys via `~/.ssh`:
-
-  ```toml
-  whale-sdk-rust = { git = "ssh://git@github.com/Raise-A-Whale/whale_ai_sdk.git", tag = "v0.2.0" }
-  ```
-
-  ```toml
-  # ~/.cargo/config.toml
-  [net]
-  git-fetch-with-cli = true
-  ```
-
-- **Consumer CI:** grant read access with a deploy key or a GitHub App/PAT
-  configured as a git credential before `cargo build` runs.
-
-## If we ever publish to crates.io
-
-`ci.yml` already runs `scripts/verify_rust_packages.sh` on every PR, so the
-crates stay publish-ready. Going public only means adding a `cargo publish`
-job back to the release workflow plus a `CARGO_REGISTRY_TOKEN` secret — crate
-names on crates.io are first-come-first-served, so decide before the project
-gains outside visibility.
+The `publish-crates` release job requires the `CRATES_IO_TOKEN` repository
+secret and publishes all six crates in topological dependency order. It treats
+an already-published version as success and waits for registry propagation
+between dependent crates. Before pushing a tag, verify that the crate names are
+available, the token is configured, and `scripts/verify_rust_packages.sh`
+passes. If the token is absent or another publish error occurs, the GitHub
+Release may already exist while the crates.io job fails.
