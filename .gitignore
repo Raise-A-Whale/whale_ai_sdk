@@ -48,6 +48,16 @@ target/
 *.iml
 *.iws
 
+# Local tooling caches and internal working documents
+/.codegraph/
+/.superpowers/
+/docs/superpowers/
+/docs/SDK_ARCHITECTURE_REVIEW.md
+/.claude/
+/.codex/
+/.cursor/
+/.mcp.json
+
 # OS / Editor
 .DS_Store
 .vscode/

@@ -1,6 +1,6 @@
 # Whale AI SDK 当前架构
 
-核查日期：2026-09-09；以当前工作区源码为准。能力、限制、开源项目对比与演进建议见 [架构评估](SDK_ARCHITECTURE_REVIEW.md)。原文中的性能比例、零拷贝、生产成熟度等结论没有仓库验证依据，本版改为可由实现和测试确认的描述。
+本文描述当前实现中已经由代码和测试确认的能力与限制。
 
 ## 分层与运行路径
 
@@ -145,6 +145,6 @@ Managed Daemon 目前需要宿主另行构建或提供路径，版本与能力�
 
 测试入口见 [README](../README.md)。默认 `cargo test --workspace` 覆盖协议、Core、Store、Daemon 与 SDK 路径；少量 `#[ignore]` 的真实进程或外部 HTTP fixture 测试用于专项验收。它们不提供外部模型质量或跨平台发行的证明。
 
-历史阶段验收记录（含曾存在的多语言消费者）保存在 [superpowers plans](superpowers/plans/)，仅作实现档案，不代表当前交付范围。Rust `0.1.x` 的 exhaustive 与 extensible API 边界见 [API stability policy](API_STABILITY.md)。
+Rust `0.1.x` 的 exhaustive 与 extensible API 边界见 [API stability policy](API_STABILITY.md)。
 
 六个 Rust crate 已建立 source-package 元数据、解包编译和仓库外 consumer 验证；接下来的重点是匹配 sidecar binary 分发、完整协议 schema／客户端生成、自动历史压缩与 tokenizer 预算、通用插件依赖与可逆注册、凭证解析和可观测性。当前 `whale-sdk-rust` 没有 attached-only 轻量 feature，选择外部 daemon 仍会编译 embedded/Core/Store 依赖图。完整外部 Codex／Claude Code／OpenCode／pi／DeepSeek Harness runtime 若以后进入范围，应通过独立 AgentBackend 保留其 loop、history、tools、approval、events 与 cancel 语义，不能伪装为单步 ModelProvider。

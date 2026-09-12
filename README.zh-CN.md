@@ -53,13 +53,15 @@ Whale 为 Rust 应用提供有状态的 Agent Runtime：模型和工具执行、
 
 ## 快速开始
 
-Whale 尚未发布到 crates.io。在正式发布前，可以直接从本仓库依赖 Rust SDK。下面的引用会跟随默认分支；生产环境需要可复现构建时，请在可用后固定到 tag 或 revision：
+Whale 已发布到 crates.io。可以直接从 registry 添加 Rust SDK，并根据应用的兼容性策略固定版本：
 
 ~~~toml
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-whale-sdk-rust = { git = "https://github.com/Raise-A-Whale/whale_ai_sdk", package = "whale-sdk-rust" }
+whale-sdk-rust = "0.1.0-beta.1"
 ~~~
+
+如需测试尚未发布的 commit，可以使用 Git dependency；为了保证构建可复现，应固定 tag 或 revision。
 
 先设置模型 Provider 凭证，然后创建 embedded Runtime、Agent、Session 和 Run：
 
@@ -215,7 +217,9 @@ cargo build -p whale-daemon --bins --examples
 
 ## 贡献
 
-欢迎提交 Issue 和 Pull Request。提交改动前，请运行上面的验证命令，并尽量保持改动聚焦。如需了解公共接口的兼容性预期，请阅读 [API 兼容策略](docs/API_STABILITY.md)。
+欢迎提交 Issue 和 Pull Request。开发流程和验证检查见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+如需了解公共接口的兼容性预期，请阅读 [API 兼容策略](docs/API_STABILITY.md)。
+发现疑似安全漏洞时，请按照 [SECURITY.md](SECURITY.md) 私下报告。
 
 ## 许可证
 

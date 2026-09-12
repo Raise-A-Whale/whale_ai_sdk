@@ -1,6 +1,6 @@
 # Registered model implementations
 
-Status: C2 model providers and C3 connection initialization are implemented and verified in the working tree. The [implementation plan](superpowers/plans/2026-09-08-model-providers.md) records the exact contract, evidence and remaining goal scope. These changes have not been committed or released.
+Model providers and connection initialization are implemented and covered by the workspace protocol, Core, daemon and SDK tests. This page documents the public provider extension contract.
 
 `ModelProvider` executes one model step. It receives the ContextPolicy projection,
 tool definitions and sampling options, and produces model events. Engine retains

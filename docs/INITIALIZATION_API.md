@@ -1,6 +1,6 @@
 # Connection initialization
 
-Status: C3 is implemented and verified in the current working tree. The [plan and verification ledger](superpowers/plans/2026-09-08-protocol-initialization.md) record the contract, test results and remaining full-goal work. No commit or release has been made; this page describes the new working-tree protocol.
+Connection initialization is implemented and covered by the workspace protocol and SDK tests. This page documents the public initialization contract.
 
 Every SDK connection checks the daemon's protocol version and required features
 before sending its first ordinary RPC. Constructors keep their existing signatures;
@@ -100,12 +100,12 @@ cleanup, including when EOF arrives before the first ordinary API call.
 
 ## Compatibility migration and verification
 
-This is an intentional prototype wire transition. An old client sending ordinary
-requests to the new daemon receives ProtocolNotInitialized. A new client connected
+This is an intentional wire-protocol transition. An old client sending ordinary
+requests to the new daemon receives `ProtocolNotInitialized`. A new client connected
 to an old daemon stops on an unsupported initialization method. There is no
-automatic legacy fallback that can silently ignore new options. Replace SDK and
-daemon together when adopting this working-tree version; matching release
-installation is still future work.
+automatic legacy fallback that can silently ignore new options. Deploy compatible
+SDK and daemon versions together, and use initialization negotiation to reject a
+mismatched peer before ordinary requests are sent.
 
 The Rust-owned [response fixture](../fixtures/protocol/initialization-v1.json) has
 valid and invalid cases. The generated

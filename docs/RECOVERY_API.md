@@ -1,6 +1,6 @@
 # Persistent sessions and recovery
 
-C4 is implemented in the current working tree. It adds an explicit SessionStore and recovery API; ordinary `create_session` calls still create in-memory sessions. These changes have not been committed or released. The [implementation plan](superpowers/plans/2026-09-08-session-store.md) records the contract and verification ledger.
+The explicit SessionStore and recovery API provide opt-in persistence; ordinary `create_session` calls still create in-memory sessions. This page documents the public persistence and recovery contract.
 
 Persistence preserves committed history, actual model inputs, tool outcomes and run snapshots. Recovery attaches that data to a new live session. It never resumes an interrupted model request, invokes a tool again or restores an old approval automatically.
 

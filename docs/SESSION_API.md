@@ -1,6 +1,6 @@
 # Session resource lifecycle
 
-Status: C1 is implemented and verified in the working tree. The exact tests and remaining full-goal scope are recorded in the [implementation plan](superpowers/plans/2026-09-08-session-lifecycle.md). These changes have not been committed or released.
+Session close and client-owned resource cleanup are implemented and covered by the workspace Core, daemon and SDK tests. This page documents the public Session lifecycle contract.
 
 Closing a Session releases that conversation's runtime state and SDK-owned binding references. The client connection and other Sessions remain usable. This supports applications that keep one client alive for many independently scoped conversations.
 
