@@ -89,15 +89,16 @@ impl SessionLifecycle {
         &self,
         thread: &str,
         owner: &str,
-        publish: impl FnOnce(),
-    ) -> Result<(), String> {
+        publish: impl FnOnce() -> Result<(), JSONRPCError>,
+    ) -> Result<(), JSONRPCError> {
         let mut state = self.state.lock().unwrap();
         if state.disconnected.contains(owner) {
-            return Err("ConnectionClosed".into());
+            return Err(JSONRPCError::invalid_params("ConnectionClosed"));
         }
         if state.sessions.contains_key(thread) {
-            return Err("SessionAlreadyExists".into());
+            return Err(JSONRPCError::invalid_params("SessionAlreadyExists"));
         }
+        publish()?;
         state.sessions.insert(
             thread.into(),
             SessionOwner {
@@ -105,7 +106,6 @@ impl SessionLifecycle {
                 phase: SessionPhase::Open,
             },
         );
-        publish();
         Ok(())
     }
     fn begin_close(
@@ -213,21 +213,35 @@ impl Preparation {
         self.completion.0.send_replace(Some(Err(error)));
         self.finished = true;
     }
-    pub(super) fn publish(&mut self, publish: impl FnOnce()) -> Result<(), String> {
+    pub(super) fn publish(
+        &mut self,
+        publish: impl FnOnce() -> Result<(), JSONRPCError>,
+    ) -> Result<(), JSONRPCError> {
         let mut state = self.lifecycle.state.lock().unwrap();
         if state.disconnected.contains(&self.owner) {
-            return Err("ConnectionClosed".into());
+            return Err(JSONRPCError::new(
+                whale_protocol::recovery::RECOVERY_REJECTED,
+                "ConnectionClosed",
+                None,
+            ));
         }
-        let session = state
-            .sessions
-            .get_mut(&self.thread)
-            .ok_or("SessionClosed")?;
+        let session = state.sessions.get_mut(&self.thread).ok_or_else(|| {
+            JSONRPCError::new(
+                whale_protocol::recovery::RECOVERY_REJECTED,
+                "SessionClosed",
+                None,
+            )
+        })?;
         if session.owner != self.owner
             || !matches!(session.phase, SessionPhase::Preparing(_, false))
         {
-            return Err("SessionClosed".into());
+            return Err(JSONRPCError::new(
+                whale_protocol::recovery::RECOVERY_REJECTED,
+                "SessionClosed",
+                None,
+            ));
         }
-        publish();
+        publish()?;
         session.phase = SessionPhase::Open;
         self.finished = true;
         self.completion.0.send_replace(Some(Ok(())));
@@ -493,5 +507,175 @@ impl DaemonServer {
             .retain(|id, _| !id.starts_with(&format!("context_{owner}:")));
         self.session_management.remove_owner(owner).await;
         self.lifecycle.forget_owner(owner);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::OutgoingTransport;
+    use async_trait::async_trait;
+    use serde_json::json;
+    use whale_protocol::{
+        interactions::{GetSessionInteractionsParams, INTERACTION_REMOVAL_CONNECTION_CLOSED},
+        session_management::{GetSessionV2Params, SessionPersistenceV2},
+        session_views::GetSessionParams,
+    };
+
+    struct NoopTransport;
+
+    #[async_trait]
+    impl OutgoingTransport for NoopTransport {
+        async fn send_line(&self, _line: &str) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    async fn start_thread(
+        server: &DaemonServer,
+        writer: &AnyTransportWriter,
+        thread: &str,
+    ) -> JSONRPCResponse {
+        server
+            .handle_start_thread(
+                RequestId::Number(1),
+                Some(json!({
+                    "session_id": thread,
+                    "model": "test",
+                    "provider_config": {"api": "openai_responses", "auth": {"type": "none"}},
+                    "interactions_enabled": true,
+                })),
+                writer,
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn projection_conflicts_roll_back_only_new_records() {
+        for management_conflict in [false, true] {
+            let server = DaemonServer::default_server();
+            let writer = AnyTransportWriter::new(Arc::new(NoopTransport));
+            let owner = writer.connection_id();
+            let thread = "conflicting-session";
+            let view_params = GetSessionParams {
+                thread_id: thread.into(),
+                history_limit: 1,
+            };
+            let management_params = GetSessionV2Params {
+                thread_id: thread.into(),
+                history_limit: 1,
+            };
+            let interaction_params = GetSessionInteractionsParams {
+                thread_id: thread.into(),
+            };
+            // A registry conflict must preserve that preexisting record while
+            // rolling back only projections inserted by this publication.
+            if management_conflict {
+                server
+                    .session_management
+                    .insert(
+                        owner,
+                        thread.into(),
+                        Some("preexisting".into()),
+                        Default::default(),
+                        Vec::new(),
+                        1,
+                        SessionPersistenceV2::Ephemeral,
+                        None,
+                        writer.clone(),
+                    )
+                    .unwrap();
+            } else {
+                server
+                    .interactions
+                    .insert(owner, thread.into(), true, writer.clone())
+                    .unwrap();
+            }
+            let expected_management = server
+                .session_management
+                .get_v2(owner, &management_params)
+                .ok();
+            let expected_interactions = server.interactions.get(owner, &interaction_params).ok();
+
+            let response = start_thread(&server, &writer, thread).await;
+            let error = response.error.expect("projection conflict must fail");
+            assert_eq!(
+                error.code,
+                if management_conflict { -32603 } else { -32602 }
+            );
+            assert_eq!(error.message, "SessionAlreadyExists");
+            assert!(server.sessions.is_empty());
+            assert!(server.persistent_sessions.is_empty());
+            assert!(server.lifecycle.guard_open(thread, owner).is_err());
+            assert!(server.session_views.get(owner, &view_params).is_err());
+            assert_eq!(
+                server
+                    .session_management
+                    .get_v2(owner, &management_params)
+                    .ok(),
+                expected_management,
+            );
+            assert_eq!(
+                server.interactions.get(owner, &interaction_params).ok(),
+                expected_interactions,
+            );
+
+            if management_conflict {
+                server.session_management.remove_owner(owner).await;
+            } else {
+                server.interactions.close_session(
+                    owner,
+                    thread,
+                    INTERACTION_REMOVAL_CONNECTION_CLOSED,
+                );
+            }
+            let retried = start_thread(&server, &writer, thread).await;
+            assert!(retried.error.is_none(), "{retried:?}");
+            assert_eq!(retried.result.unwrap()["thread_id"], thread);
+            assert!(server.lifecycle.guard_open(thread, owner).is_ok());
+            assert!(server.session_views.get(owner, &view_params).is_ok());
+            assert!(server
+                .session_management
+                .get_v2(owner, &management_params)
+                .is_ok());
+            assert!(server.interactions.get(owner, &interaction_params).is_ok());
+            server.disconnect_connection(&writer).await;
+        }
+    }
+
+    #[test]
+    fn failed_publication_leaves_identity_available_and_gate_usable() {
+        let lifecycle = SessionLifecycle::default();
+        let error = lifecycle
+            .publish("thread", "owner", || {
+                Err(JSONRPCError::internal_error("projection failed"))
+            })
+            .unwrap_err();
+        assert_eq!(error.code, -32603);
+        assert!(lifecycle.guard_open("thread", "owner").is_err());
+        lifecycle.publish("thread", "owner", || Ok(())).unwrap();
+        assert!(lifecycle.guard_open("thread", "owner").is_ok());
+        lifecycle
+            .publish("other", "other-owner", || Ok(()))
+            .unwrap();
+        assert!(lifecycle.guard_open("other", "other-owner").is_ok());
+        assert!(lifecycle
+            .publish("thread", "owner", || panic!("duplicate publication ran"))
+            .is_err());
+    }
+
+    #[test]
+    fn failed_reserved_publication_does_not_open_session_or_poison_gate() {
+        let lifecycle = Arc::new(SessionLifecycle::default());
+        let mut reservation = lifecycle.reserve("thread", "owner").unwrap();
+        assert!(reservation
+            .publish(|| Err(JSONRPCError::internal_error("projection failed")))
+            .is_err());
+        assert!(lifecycle.guard_open("thread", "owner").is_err());
+        drop(reservation);
+        lifecycle
+            .publish("other", "other-owner", || Ok(()))
+            .unwrap();
+        assert!(lifecycle.guard_open("other", "other-owner").is_ok());
     }
 }

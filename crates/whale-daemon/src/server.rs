@@ -846,33 +846,43 @@ impl DaemonServer {
                         created_at_ms,
                         transport.clone(),
                     )
-                    .expect("validated fresh Session view");
-                self.session_management
-                    .insert(
+                    .map_err(JSONRPCError::invalid_params)?;
+                if let Err(error) = self.interactions.insert(
+                    transport.connection_id(),
+                    thread_id.clone(),
+                    interactions_enabled,
+                    transport.clone(),
+                ) {
+                    self.session_views
+                        .remove(&thread_id, transport.connection_id());
+                    return Err(JSONRPCError::invalid_params(error));
+                }
+                if let Err(error) = self.session_management.insert(
+                    transport.connection_id(),
+                    thread_id.clone(),
+                    agent_name.clone(),
+                    metadata.clone(),
+                    Vec::new(),
+                    created_at_ms,
+                    whale_protocol::session_management::SessionPersistenceV2::Ephemeral,
+                    max_history_bytes,
+                    transport.clone(),
+                ) {
+                    self.interactions.close_session(
                         transport.connection_id(),
-                        thread_id.clone(),
-                        agent_name.clone(),
-                        metadata.clone(),
-                        Vec::new(),
-                        created_at_ms,
-                        whale_protocol::session_management::SessionPersistenceV2::Ephemeral,
-                        max_history_bytes,
-                        transport.clone(),
-                    )
-                    .expect("validated fresh V2 Session view");
-                self.interactions
-                    .insert(
-                        transport.connection_id(),
-                        thread_id.clone(),
-                        interactions_enabled,
-                        transport.clone(),
-                    )
-                    .expect("validated fresh Interaction view");
+                        &thread_id,
+                        whale_protocol::interactions::INTERACTION_REMOVAL_CONNECTION_CLOSED,
+                    );
+                    self.session_views
+                        .remove(&thread_id, transport.connection_id());
+                    return Err(session_management::rpc_error(error));
+                }
                 self.sessions
                     .insert(thread_id.clone(), Arc::new(Mutex::new(session)));
+                Ok(())
             })
         {
-            return JSONRPCResponse::error(id, JSONRPCError::invalid_params(error));
+            return JSONRPCResponse::error(id, error);
         }
 
         let created_at = chrono::DateTime::from_timestamp_millis(created_at_ms as i64)
@@ -901,6 +911,14 @@ impl DaemonServer {
         let thread_id = params
             .session_id
             .unwrap_or_else(|| format!("th_{}", Uuid::new_v4()));
+        if let Err(error) =
+            whale_protocol::session_management::SessionSummaryV2::new(&thread_id, 0).validate()
+        {
+            return Err(JSONRPCResponse::error(
+                id,
+                JSONRPCError::invalid_params(error),
+            ));
+        }
         let mut sampling_options = SamplingOptions::new(params.model);
         if let Some(options) = params.options.as_ref() {
             apply_options(&mut sampling_options, options);

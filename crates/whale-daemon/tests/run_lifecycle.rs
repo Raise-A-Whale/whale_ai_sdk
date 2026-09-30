@@ -61,6 +61,54 @@ async fn response(rx: &mut mpsc::UnboundedReceiver<Value>, id: u64) -> Value {
 }
 
 #[tokio::test]
+async fn invalid_session_ids_do_not_poison_lifecycle_or_publish_sessions() {
+    let (server, writer, mut rx) = fixture();
+    common::initialize(&server, &writer, Some(&mut rx)).await;
+    let (other_tx, mut other_rx) = mpsc::unbounded_channel();
+    let other = AnyTransportWriter::new(Arc::new(Capture(other_tx)));
+    common::initialize(&server, &other, Some(&mut other_rx)).await;
+
+    for invalid in ["", " ", "\t\n", " padded", "padded ", "a\0b", "a\nb"] {
+        send(
+            &server,
+            &writer,
+            1,
+            "session.start_thread",
+            json!({"session_id":invalid,"model":"test"}),
+        )
+        .await;
+        let rejected = response(&mut rx, 1).await;
+        assert_eq!(rejected["error"]["code"], -32602, "{rejected}");
+    }
+
+    for (connection, receiver, thread) in [
+        (&writer, &mut rx, "valid-original"),
+        (&other, &mut other_rx, "valid-other"),
+    ] {
+        send(
+            &server,
+            connection,
+            2,
+            "session.start_thread",
+            json!({"session_id":thread,"model":"test"}),
+        )
+        .await;
+        let created = response(receiver, 2).await;
+        assert_eq!(created["result"]["thread_id"], thread, "{created}");
+        send(
+            &server,
+            connection,
+            3,
+            "session.close",
+            json!({"thread_id":thread}),
+        )
+        .await;
+        let closed = response(receiver, 3).await;
+        assert_eq!(closed["result"]["closed"], true, "{closed}");
+    }
+}
+
+#[tokio::test]
 async fn start_is_immediate_busy_cancel_and_final_query() {
     let (server, writer, mut rx) = fixture();
     common::initialize(&server, &writer, Some(&mut rx)).await;
