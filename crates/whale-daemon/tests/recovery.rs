@@ -513,10 +513,12 @@ async fn eof_during_creation_joins_commit_and_detaches_without_publication() {
     backend.release.add_permits(1);
     creating.await.unwrap();
     disconnect.await.unwrap();
-    assert!(received(&mut rx, |v| v["id"] == 10)
-        .await
-        .get("error")
-        .is_some());
+    let response = received(&mut rx, |v| v["id"] == 10).await;
+    assert_eq!(
+        response["error"]["code"],
+        whale_protocol::recovery::RECOVERY_REJECTED,
+        "{response}",
+    );
     assert!(server.sessions().is_empty());
     let record = backend
         .load(key["recovery_id"].as_str().unwrap())

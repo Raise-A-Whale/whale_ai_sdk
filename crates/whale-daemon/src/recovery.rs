@@ -408,32 +408,42 @@ impl DaemonServer {
                     created_at_ms,
                     transport.clone(),
                 )
-                .expect("validated recovered Session view");
-            self.session_management
-                .insert(
+                .map_err(JSONRPCError::invalid_params)?;
+            if let Err(error) = self.interactions.insert(
+                transport.connection_id(),
+                thread.clone(),
+                interactions_enabled,
+                transport.clone(),
+            ) {
+                self.session_views
+                    .remove(&thread, transport.connection_id());
+                return Err(JSONRPCError::invalid_params(error));
+            }
+            if let Err(error) = self.session_management.insert(
+                transport.connection_id(),
+                thread.clone(),
+                agent_name.clone(),
+                metadata.clone(),
+                recovered_history.clone(),
+                created_at_ms,
+                persistence,
+                max_history_bytes,
+                transport.clone(),
+            ) {
+                self.interactions.close_session(
                     transport.connection_id(),
-                    thread.clone(),
-                    agent_name.clone(),
-                    metadata.clone(),
-                    recovered_history.clone(),
-                    created_at_ms,
-                    persistence,
-                    max_history_bytes,
-                    transport.clone(),
-                )
-                .expect("validated recovered V2 Session view");
-            self.interactions
-                .insert(
-                    transport.connection_id(),
-                    thread.clone(),
-                    interactions_enabled,
-                    transport.clone(),
-                )
-                .expect("validated recovered Interaction view");
+                    &thread,
+                    whale_protocol::interactions::INTERACTION_REMOVAL_CONNECTION_CLOSED,
+                );
+                self.session_views
+                    .remove(&thread, transport.connection_id());
+                return Err(super::session_management::rpc_error(error));
+            }
             self.persistent_sessions
                 .insert(thread.clone(), journal.clone());
             self.sessions
                 .insert(thread.clone(), Arc::new(Mutex::new(session)));
+            Ok(())
         });
         if let Err(error) = result {
             if let Err(storage) = journal.detach().await {
@@ -441,7 +451,7 @@ impl DaemonServer {
                 reservation.fail(error.clone());
                 return JSONRPCResponse::error(id, error);
             }
-            return JSONRPCResponse::error(id, JSONRPCError::new(RECOVERY_REJECTED, error, None));
+            return JSONRPCResponse::error(id, error);
         }
         JSONRPCResponse::success(
             id,

@@ -9,9 +9,19 @@ pub struct HttpModelProvider {
     client: reqwest::Client,
 }
 impl HttpModelProvider {
+    /// Creates a provider that rejects redirects to keep credentials and request
+    /// bodies at the configured endpoint. Configure the final endpoint directly.
     pub fn new(adapter: Arc<dyn ProtocolAdapter>) -> Self {
-        Self::with_client(adapter, reqwest::Client::new())
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("failed to build HTTP model client");
+        Self::with_client(adapter, client)
     }
+
+    /// Uses the supplied client unchanged. The caller is responsible for its
+    /// redirect policy: following redirects can forward credentials (including
+    /// `x-api-key`) and request bodies to a different origin.
     pub fn with_client(adapter: Arc<dyn ProtocolAdapter>, client: reqwest::Client) -> Self {
         Self { adapter, client }
     }

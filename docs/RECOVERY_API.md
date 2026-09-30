@@ -18,6 +18,19 @@ The default transport is stdio. For a shared local daemon, add `--listen uds:///
 
 SQLiteStore uses WAL and synchronous FULL with an exclusive process-held sidecar lock. Only one runtime may own that local database at a time; a second writer fails at startup. Reopening after the owner exits or dies recovers interrupted records before advertising readiness. This is local storage, not a distributed lease or a shared network database service. Preserve the database and SQLite WAL files; the recovery key alone contains no history.
 
+### Protect persisted data
+
+Persistence is optional. SQLite stores conversation history, model inputs and tool outcomes as local data; it does not encrypt them at rest. File exposure depends on your host permissions and deployment configuration. Use a dedicated directory owned by the daemon account with mode `0700`, database and sidecar files with mode `0600`, and set `umask 077` **before** starting the daemon. For a new private store on Unix:
+
+```sh
+umask 077
+mkdir -p "$HOME/.local/share/whale"
+chmod 700 "$HOME/.local/share/whale"
+./target/debug/whale-daemon --session-store "$HOME/.local/share/whale/sessions.sqlite"
+```
+
+`umask` does not repair existing permissions. With the daemon stopped, review ownership and restrict existing database files, `-wal`, `-shm` and `.whale-lock` sidecars to the daemon account (`0600`). Keep the directory private so other local users cannot replace files or plant symlinks. Do not delete the lock sidecar while a runtime owns the store, and do not discard the WAL: it may contain committed data. Apply the same access controls to backups and use a SQLite-consistent backup process. Use host-level encryption where required; recovery secrets authenticate recovery requests but do not encrypt the database. If durable recovery is unnecessary, omit `--session-store` and avoid configuring a persistent store.
+
 The existing client constructors can pass daemon arguments:
 
 ```rust
